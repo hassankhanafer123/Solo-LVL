@@ -62,8 +62,6 @@ export function applyXpGain(profile: XpInput, rawXp: number): XpResult {
   let pointsGained = 0;
   let levelsGained = 0;
   const startTitle = profile.title;
-  // Track the first new title crossed during this XP gain.
-  let firstNewTitle: Title | null = null;
 
   while (xpInLevel >= threshold) {
     xpInLevel -= threshold;
@@ -71,20 +69,10 @@ export function applyXpGain(profile: XpInput, rawXp: number): XpResult {
     levelsGained += 1;
     pointsGained += 5;
     threshold = xpToNext(level);
-
-    const titleAtLevel = titleForLevel(level);
-    if (firstNewTitle === null && titleAtLevel !== startTitle) {
-      firstNewTitle = titleAtLevel;
-    }
   }
 
-  // r.title reports the first newly unlocked title (if any), otherwise the
-  // current profile title.  title_unlocked mirrors this value.
-  // Rationale: the test for "unlocks new title on level-up" asserts both
-  // r.title and r.title_unlocked equal the first title crossed, so we surface
-  // the first unlock rather than the final level's title.
-  const displayTitle = firstNewTitle ?? startTitle;
-  const titleUnlocked = firstNewTitle;
+  const newTitle = titleForLevel(level);
+  const titleUnlocked = newTitle !== startTitle ? newTitle : null;
 
   return {
     level,
@@ -92,7 +80,7 @@ export function applyXpGain(profile: XpInput, rawXp: number): XpResult {
     xp_in_level: xpInLevel,
     xp_to_next: threshold,
     unallocated_points: profile.unallocated_points + pointsGained,
-    title: displayTitle,
+    title: newTitle,
     levels_gained: levelsGained,
     title_unlocked: titleUnlocked,
   };

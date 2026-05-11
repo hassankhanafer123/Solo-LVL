@@ -86,11 +86,32 @@ describe('applyXpGain', () => {
     expect(r.xp_in_level).toBe(120);
   });
 
-  it('unlocks new title on level-up', () => {
+  it('unlocks new title on level-up (single threshold cross)', () => {
     const near10 = { ...baseProfile, level: 9, xp_in_level: 0, xp_to_next: xpToNext(9), title: 'Novice' as const };
-    const r = applyXpGain(near10, 999_999);
+    const r = applyXpGain(near10, xpToNext(9));
+    expect(r.level).toBe(10);
     expect(r.title).toBe('Awakened');
     expect(r.title_unlocked).toBe('Awakened');
+  });
+
+  it('reports final title when crossing multiple title thresholds in one gain', () => {
+    // Level 9 → ~25+ with a massive XP boost: r.title is the highest title reached
+    const near10 = { ...baseProfile, level: 9, xp_in_level: 0, xp_to_next: xpToNext(9), title: 'Novice' as const };
+    const r = applyXpGain(near10, 999_999);
+    // The user ends up well past level 10. r.title should NOT be stuck at 'Awakened';
+    // it should reflect their actual final-level title.
+    expect(r.level).toBeGreaterThan(10);
+    expect(r.title).toBe(titleForLevel(r.level));
+    // title_unlocked is non-null because they started Novice and crossed at least one threshold.
+    expect(r.title_unlocked).not.toBeNull();
+    expect(r.title_unlocked).toBe(r.title);
+  });
+
+  it('returns title_unlocked = null when no title threshold crossed', () => {
+    const r = applyXpGain(baseProfile, 50);
+    expect(r.level).toBe(1);
+    expect(r.title).toBe('Novice');
+    expect(r.title_unlocked).toBeNull();
   });
 
   it('rejects negative XP', () => {
