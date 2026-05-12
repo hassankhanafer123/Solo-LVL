@@ -128,3 +128,72 @@
     @apply font-sans;
   }
 }
+
+/* ---------- Solo Leveling Life custom animations ---------- */
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+@keyframes pulse-glow-blue {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0); }
+  50% { box-shadow: 0 0 24px 4px rgba(59, 130, 246, 0.35); }
+}
+
+@keyframes pulse-glow-red {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+  50% { box-shadow: 0 0 32px 6px rgba(239, 68, 68, 0.4); }
+}
+
+@keyframes float-up {
+  0% { transform: translateY(0) scale(0.8); opacity: 0; }
+  20% { opacity: 1; transform: translateY(-10px) scale(1); }
+  100% { transform: translateY(-60px) scale(1.1); opacity: 0; }
+}
+
+@keyframes flash-success {
+  0% { background-color: rgba(16, 185, 129, 0); }
+  30% { background-color: rgba(16, 185, 129, 0.18); }
+  100% { background-color: rgba(16, 185, 129, 0); }
+}
+
+@keyframes burst-in {
+  0% { transform: scale(0.6); opacity: 0; }
+  60% { transform: scale(1.08); opacity: 1; }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+@keyframes fade-in-up {
+  0% { transform: translateY(8px); opacity: 0; }
+  100% { transform: translateY(0); opacity: 1; }
+}
+
+@keyframes flame-flicker {
+  0%, 100% { transform: scale(1) rotate(-2deg); }
+  50% { transform: scale(1.08) rotate(2deg); }
+}
+
+.animate-shimmer {
+  background-size: 200% 100%;
+  animation: shimmer 2.4s linear infinite;
+}
+.animate-pulse-glow-blue { animation: pulse-glow-blue 2.4s ease-in-out infinite; }
+.animate-pulse-glow-red { animation: pulse-glow-red 2.8s ease-in-out infinite; }
+.animate-float-up { animation: float-up 1.2s ease-out forwards; }
+.animate-flash-success { animation: flash-success 1.2s ease-out; }
+.animate-burst-in { animation: burst-in 0.35s cubic-bezier(0.22, 1.4, 0.36, 1) both; }
+.animate-fade-in-up { animation: fade-in-up 0.4s ease-out both; }
+.animate-flame { animation: flame-flicker 1.4s ease-in-out infinite; transform-origin: center bottom; }
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-shimmer,
+  .animate-pulse-glow-blue,
+  .animate-pulse-glow-red,
+  .animate-float-up,
+  .animate-flash-success,
+  .animate-burst-in,
+  .animate-fade-in-up,
+  .animate-flame {
+    animation: none !important;
+  }
+}
