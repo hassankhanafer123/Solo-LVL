@@ -269,7 +269,7 @@ function CameraRig({ mode }: { mode: SceneMode }) {
   return null;
 }
 
-/* ---------- Scene wrapper ---------- */
+/* ---------- Scene wrapper — full-bleed background ---------- */
 export function HeroScene({
   mode,
   hoveredStat,
@@ -279,7 +279,6 @@ export function HeroScene({
   pulseTrigger,
   xpRatio,
   streak,
-  height = 480,
 }: {
   mode: SceneMode;
   hoveredStat: StatKind | null;
@@ -289,7 +288,6 @@ export function HeroScene({
   pulseTrigger: number;
   xpRatio: number; // 0..1
   streak: number;
-  height?: number;
 }) {
   const [supported, setSupported] = useState(true);
   useEffect(() => {
@@ -302,22 +300,16 @@ export function HeroScene({
     }
   }, []);
 
-  if (!supported) {
-    return (
-      <div className="grid place-items-center rounded-3xl border border-white/10 bg-slate-950/50" style={{ height }}>
-        <p className="text-slate-500 text-sm">WebGL not supported.</p>
-      </div>
-    );
-  }
+  if (!supported) return null;
 
   const accent = mode === "idle" ? "#60a5fa" : STATS[mode].ringColor;
   const sparkleCount = Math.min(180, 40 + streak * 2);
 
   return (
-    <div className="relative overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-slate-900/40 to-slate-950" style={{ height }}>
+    <div className="pointer-events-none fixed inset-0 z-0 overflow-hidden">
       <Canvas camera={{ position: [0, 0.4, 5.5], fov: 45 }} dpr={[1, 2]} gl={{ antialias: true, alpha: true }}>
         <color attach="background" args={["#020617"]} />
-        <fog attach="fog" args={["#020617", 6, 14]} />
+        <fog attach="fog" args={["#020617", 7, 16]} />
 
         <ambientLight intensity={0.4} />
         <pointLight position={[5, 5, 5]} intensity={1.8} color={accent} />
@@ -341,28 +333,24 @@ export function HeroScene({
           <ActiveBeam mode={mode} />
           <CameraRig mode={mode} />
 
-          <Sparkles count={sparkleCount} scale={6} size={2.5} speed={0.35} color={accent} opacity={0.55} />
-          <Stars radius={50} depth={20} count={1200} factor={3} fade speed={0.6} />
+          <Sparkles count={sparkleCount} scale={[14, 8, 10]} size={2.2} speed={0.32} color={accent} opacity={0.5} />
+          <Stars radius={60} depth={26} count={1600} factor={3.5} fade speed={0.6} />
           <Environment preset="night" />
         </Suspense>
       </Canvas>
 
-      {/* Corner brackets */}
-      <Bracket pos="tl" />
-      <Bracket pos="tr" />
-      <Bracket pos="bl" />
-      <Bracket pos="br" />
-
-      {/* Scan line */}
+      {/* Subtle vignette so content stays legible at the edges */}
       <div
         aria-hidden
-        className="pointer-events-none absolute inset-x-0 h-px"
-        style={{ top: "50%", background: `linear-gradient(90deg, transparent, ${accent}80, transparent)`, animation: "scan 5s linear infinite" }}
+        className="absolute inset-0"
+        style={{
+          background:
+            "radial-gradient(ellipse 60% 50% at 50% 50%, transparent 0%, rgba(2,6,23,0.55) 75%, rgba(2,6,23,0.9) 100%)",
+        }}
       />
-      <style>{`@keyframes scan { 0% { top: -2%; } 100% { top: 102%; } }`}</style>
 
       {/* Live status corner */}
-      <div className="pointer-events-none absolute left-3 bottom-3 flex items-center gap-1.5 rounded-full bg-slate-950/70 px-2 py-1 backdrop-blur">
+      <div className="absolute left-4 bottom-4 flex items-center gap-1.5 rounded-full bg-slate-950/60 px-2.5 py-1 backdrop-blur">
         <span className="block h-1.5 w-1.5 rounded-full animate-pulse" style={{ backgroundColor: accent }} />
         <span className="font-mono text-[9px] tracking-[0.3em] uppercase text-slate-300">LIVE · WebGL</span>
       </div>

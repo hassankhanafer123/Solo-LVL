@@ -20,7 +20,7 @@ import confetti from "canvas-confetti";
 import { cn } from "@/lib/utils";
 import type { StatKind } from "@/lib/types";
 import { StudioCursor } from "@/components/cursor";
-import { CountUp } from "@/components/animations/activity-rings";
+import { ActivityRings, CountUp } from "@/components/animations/activity-rings";
 import { TiltCard } from "@/components/tilt-card";
 import dynamic from "next/dynamic";
 
@@ -272,11 +272,17 @@ export default function Dashboard() {
       <StudioCursor />
       <div aria-hidden className="grain" />
 
-      {/* Background mesh */}
-      <div aria-hidden className="pointer-events-none fixed inset-0 z-0">
-        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_left,rgba(59,130,246,0.15),transparent_50%)]" />
-        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_bottom_right,rgba(168,85,247,0.13),transparent_50%)]" />
-      </div>
+      {/* === Live 3D background (full-bleed) === */}
+      <HeroScene
+        mode={activeStatFilter ?? "idle"}
+        hoveredStat={hoveredStat}
+        stats={player.stats}
+        burstStat={burstStat}
+        burstId={burstId}
+        pulseTrigger={pulseTrigger}
+        xpRatio={player.xpInLevel / player.xpToNext}
+        streak={player.streak}
+      />
 
       <div className="relative z-10 mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 pt-6 pb-12">
         {/* Top bar */}
@@ -359,51 +365,63 @@ export default function Dashboard() {
 
         {/* === Bento === */}
         <div className="mt-5 grid grid-cols-12 gap-4 md:gap-5">
-          {/* 3D Hero scene — centerpiece */}
+          {/* Activity Rings — today's progress, on top of the 3D background */}
           <TiltCard className="col-span-12 lg:col-span-7 rounded-3xl" intensity={4}>
-            <div className="relative overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-slate-900/80 to-slate-950 backdrop-blur-xl">
-              <HeroScene
-                mode={activeStatFilter ?? "idle"}
-                hoveredStat={hoveredStat}
-                stats={player.stats}
-                burstStat={burstStat}
-                burstId={burstId}
-                pulseTrigger={pulseTrigger}
-                xpRatio={player.xpInLevel / player.xpToNext}
-                streak={player.streak}
-                height={420}
-              />
-              {/* Overlay readout */}
-              <div className="pointer-events-none absolute inset-x-0 top-0 flex items-start justify-between p-4 md:p-5">
+            <div className="relative overflow-hidden rounded-3xl border border-white/10 bg-slate-950/55 p-6 md:p-7 backdrop-blur-2xl">
+              <div className="flex items-start justify-between">
                 <div>
                   <div className="font-mono text-[10px] tracking-[0.3em] uppercase text-slate-400">
-                    {activeStatFilter ? STAT_META[activeStatFilter].label : "System core"}
+                    Today's progress
                   </div>
-                  <div className="mt-1 text-2xl font-semibold tracking-tight text-white">
+                  <div className="mt-1 text-2xl font-semibold tracking-tight">
                     {cleared ? (
                       <span className="text-emerald-300">All cleared ✓</span>
                     ) : (
-                      <>
-                        <CountUp to={remaining} duration={500} /> to go
-                      </>
+                      <span><CountUp to={remaining} duration={500} /> to go</span>
                     )}
                   </div>
                 </div>
-                <div className="text-right">
-                  <div className="font-mono text-[10px] tracking-[0.3em] uppercase text-slate-400">
-                    XP today
-                  </div>
-                  <div className="mt-1 text-2xl font-bold tabular-nums text-blue-300">
+                <div className="text-right font-mono text-xs text-slate-400">
+                  <div className="text-blue-300 text-xl font-bold tabular-nums">
                     <CountUp to={totalXpToday} duration={900} />
                   </div>
+                  <div className="text-[10px] tracking-[0.2em] uppercase text-slate-500">XP today</div>
                 </div>
               </div>
-              <div className="pointer-events-none absolute inset-x-0 bottom-0 flex items-end justify-between p-4 md:p-5">
-                <div className="font-mono text-[10px] tracking-[0.3em] uppercase text-slate-500">
-                  Click a stat to focus
+
+              <div className="mt-5 grid grid-cols-12 items-center gap-5">
+                <div className="col-span-12 sm:col-span-7 flex justify-center">
+                  <ActivityRings
+                    size={240}
+                    centerLabel="Lv"
+                    centerValue={String(player.level)}
+                    rings={[
+                      { label: "Quests", progress: completedRequired / Math.max(1, totalRequired), gradient: ["#fb7185", "#e11d48"], glow: "rgba(244,63,94,0.6)", value: `${completedRequired}/${totalRequired}`, goal: "" },
+                      { label: "XP", progress: Math.min(1, totalXpToday / xpGoalToday), gradient: ["#60a5fa", "#7c3aed"], glow: "rgba(59,130,246,0.6)", value: `${totalXpToday}`, goal: "" },
+                      { label: "Active", progress: Math.min(1, activeMinutes / 120), gradient: ["#fbbf24", "#d97706"], glow: "rgba(251,191,36,0.6)", value: `${activeMinutes}m`, goal: "" },
+                    ]}
+                  />
                 </div>
-                <div className="font-mono text-[10px] tracking-[0.3em] uppercase text-slate-500">
-                  WebGL · Live
+                <div className="col-span-12 sm:col-span-5 space-y-3">
+                  <RingLegend dot="from-rose-400 to-rose-600" label="Quests" value={`${completedRequired} / ${totalRequired}`} />
+                  <RingLegend dot="from-blue-400 to-purple-500" label="XP" value={`${totalXpToday} / ${xpGoalToday}`} />
+                  <RingLegend dot="from-amber-400 to-amber-600" label="Active" value={`${activeMinutes} / 120`} />
+                  <div className="pt-3 border-t border-white/5">
+                    <div className="flex items-baseline justify-between text-xs font-mono">
+                      <span className="text-slate-400 uppercase tracking-widest">Lv {player.level}</span>
+                      <span className="text-blue-300 tabular-nums">
+                        <CountUp to={player.xpInLevel} duration={900} /> / {player.xpToNext}
+                      </span>
+                    </div>
+                    <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-white/5">
+                      <motion.div
+                        initial={false}
+                        animate={{ width: `${Math.min(100, (player.xpInLevel / player.xpToNext) * 100)}%` }}
+                        transition={{ type: "spring", stiffness: 80, damping: 22 }}
+                        className="h-full rounded-full bg-gradient-to-r from-blue-500 to-purple-500 shadow-[0_0_18px_rgba(59,130,246,0.6)]"
+                      />
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
@@ -411,7 +429,7 @@ export default function Dashboard() {
 
           {/* Streak tile */}
           <TiltCard className="col-span-12 sm:col-span-6 lg:col-span-5 rounded-3xl">
-            <div className="relative overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-orange-950/40 to-slate-950 p-6 md:p-8 backdrop-blur-xl h-full">
+            <div className="relative overflow-hidden rounded-3xl border border-white/10 bg-slate-950/55 p-6 md:p-7 backdrop-blur-2xl h-full">
               <div className="flex items-start justify-between">
                 <div>
                   <div className="font-mono text-[10px] tracking-[0.3em] uppercase text-orange-300">Streak</div>
@@ -461,7 +479,7 @@ export default function Dashboard() {
 
           {/* Stat overview */}
           <TiltCard className="col-span-12 lg:col-span-7 rounded-3xl">
-            <div className="relative overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-slate-900/80 to-slate-950 p-6 md:p-7 backdrop-blur-xl">
+            <div className="relative overflow-hidden rounded-3xl border border-white/10 bg-slate-950/55 p-6 md:p-7 backdrop-blur-2xl">
               <div className="flex items-center justify-between mb-5">
                 <div>
                   <div className="font-mono text-[10px] tracking-[0.3em] uppercase text-slate-500">
@@ -497,7 +515,7 @@ export default function Dashboard() {
 
           {/* Compact info */}
           <TiltCard className="col-span-12 sm:col-span-6 lg:col-span-5 rounded-3xl">
-            <div className="relative overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-purple-950/30 to-slate-950 p-6 md:p-7 backdrop-blur-xl h-full">
+            <div className="relative overflow-hidden rounded-3xl border border-white/10 bg-slate-950/55 p-6 md:p-7 backdrop-blur-2xl h-full">
               <div className="flex items-start justify-between">
                 <div>
                   <div className="font-mono text-[10px] tracking-[0.3em] uppercase text-purple-300">
