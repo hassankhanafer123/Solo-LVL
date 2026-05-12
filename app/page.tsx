@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo, useRef } from "react";
+import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { motion, AnimatePresence, useReducedMotion } from "motion/react";
 import {
   Check,
@@ -21,8 +21,8 @@ import {
   RotateCcw,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { StatArt } from "@/components/animations/stat-art";
 import type { StatKind } from "@/lib/types";
+import { HunterFigure, type ZoomTarget } from "@/components/animations/hunter-figure";
 
 /* ----------------------------------------------------------
  * Types & seed data — replaced by Supabase queries in Phase 2
@@ -47,48 +47,13 @@ type Quest = {
 
 const STAT_META: Record<
   Stat,
-  { label: string; text: string; chip: string; bar: string; glow: string; ring: string }
+  { label: string; bodyPart: string; text: string; chip: string; bar: string; ring: string }
 > = {
-  STR: {
-    label: "Strength",
-    text: "text-rose-300",
-    chip: "bg-rose-500/15 text-rose-300 border-rose-500/30",
-    bar: "from-rose-400 to-rose-600",
-    glow: "shadow-[0_0_30px_rgba(244,63,94,0.35)]",
-    ring: "ring-rose-500/40",
-  },
-  VIT: {
-    label: "Vitality",
-    text: "text-emerald-300",
-    chip: "bg-emerald-500/15 text-emerald-300 border-emerald-500/30",
-    bar: "from-emerald-400 to-emerald-600",
-    glow: "shadow-[0_0_30px_rgba(16,185,129,0.35)]",
-    ring: "ring-emerald-500/40",
-  },
-  AGI: {
-    label: "Agility",
-    text: "text-amber-300",
-    chip: "bg-amber-500/15 text-amber-300 border-amber-500/30",
-    bar: "from-amber-400 to-amber-600",
-    glow: "shadow-[0_0_30px_rgba(245,158,11,0.4)]",
-    ring: "ring-amber-500/40",
-  },
-  INT: {
-    label: "Intellect",
-    text: "text-blue-300",
-    chip: "bg-blue-500/15 text-blue-300 border-blue-500/30",
-    bar: "from-blue-400 to-blue-600",
-    glow: "shadow-[0_0_30px_rgba(59,130,246,0.4)]",
-    ring: "ring-blue-500/40",
-  },
-  PER: {
-    label: "Perception",
-    text: "text-purple-300",
-    chip: "bg-purple-500/15 text-purple-300 border-purple-500/30",
-    bar: "from-purple-400 to-purple-600",
-    glow: "shadow-[0_0_30px_rgba(168,85,247,0.4)]",
-    ring: "ring-purple-500/40",
-  },
+  STR: { label: "Strength", bodyPart: "Chest", text: "text-rose-300", chip: "bg-rose-500/15 text-rose-300 border-rose-500/30", bar: "from-rose-400 to-rose-600", ring: "ring-rose-500/40" },
+  VIT: { label: "Vitality", bodyPart: "Heart", text: "text-emerald-300", chip: "bg-emerald-500/15 text-emerald-300 border-emerald-500/30", bar: "from-emerald-400 to-emerald-600", ring: "ring-emerald-500/40" },
+  AGI: { label: "Agility", bodyPart: "Legs", text: "text-amber-300", chip: "bg-amber-500/15 text-amber-300 border-amber-500/30", bar: "from-amber-400 to-amber-600", ring: "ring-amber-500/40" },
+  INT: { label: "Intellect", bodyPart: "Brain", text: "text-blue-300", chip: "bg-blue-500/15 text-blue-300 border-blue-500/30", bar: "from-blue-400 to-blue-600", ring: "ring-blue-500/40" },
+  PER: { label: "Perception", bodyPart: "Eyes", text: "text-purple-300", chip: "bg-purple-500/15 text-purple-300 border-purple-500/30", bar: "from-purple-400 to-purple-600", ring: "ring-purple-500/40" },
 };
 
 const INITIAL_QUESTS: Quest[] = [
@@ -112,7 +77,6 @@ const INITIAL_PLAYER = {
 
 const TITLE_FOR_LEVEL = (lv: number) =>
   lv >= 100 ? "Shadow Monarch" : lv >= 50 ? "Necromancer" : lv >= 25 ? "Elite Hunter" : lv >= 10 ? "Awakened" : "Novice";
-
 const XP_TO_NEXT = (lv: number) => Math.ceil(100 * Math.pow(1.4, lv - 1));
 
 function isQuestDone(c: Control): boolean {
@@ -132,23 +96,21 @@ export default function DashboardPreview() {
   const [xpFloaters, setXpFloaters] = useState<{ id: number; xp: number; x: number; y: number }[]>([]);
   const [levelUpVisible, setLevelUpVisible] = useState(false);
   const [activeStatFilter, setActiveStatFilter] = useState<Stat | null>(null);
+  const [transientStat, setTransientStat] = useState<Stat | null>(null);
   const floaterIdRef = useRef(0);
-  const tickRef = useRef<number>(0);
-  const [, force] = useState(0);
+  const transientTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // 1-second tick for live timers
+  // Live timer tick
   useEffect(() => {
     const id = setInterval(() => {
-      tickRef.current++;
-      // Move running timers forward
       setQuests((prev) => {
         let touched = false;
         const next = prev.map((q) => {
           if (q.control.kind !== "timer" || !q.control.running) return q;
           touched = true;
           const newElapsed = q.control.elapsedSec + 1;
-          const reachedTarget = newElapsed / 60 >= q.control.targetMin;
-          if (reachedTarget) {
+          const reached = newElapsed / 60 >= q.control.targetMin;
+          if (reached) {
             fireXpGain(q.baseXp);
             return { ...q, control: { ...q.control, elapsedSec: q.control.targetMin * 60, running: false } };
           }
@@ -156,7 +118,6 @@ export default function DashboardPreview() {
         });
         return touched ? next : prev;
       });
-      force((n) => n + 1);
     }, 1000);
     return () => clearInterval(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -166,14 +127,28 @@ export default function DashboardPreview() {
   const remaining = useMemo(() => requiredQuests.filter((q) => !isQuestDone(q.control)).length, [requiredQuests]);
   const totalRequired = requiredQuests.length;
   const cleared = remaining === 0;
+  const runningTimer = quests.find((q) => q.control.kind === "timer" && q.control.running);
+
+  // Stable zoom resolution: running timer > activeFilter > transient > full
+  const zoom: ZoomTarget = useMemo(() => {
+    if (runningTimer) return runningTimer.stat;
+    if (activeStatFilter) return activeStatFilter;
+    if (transientStat) return transientStat;
+    return "full";
+  }, [runningTimer, activeStatFilter, transientStat]);
 
   const visibleQuests = activeStatFilter ? quests.filter((q) => q.stat === activeStatFilter) : quests;
+
+  const triggerZoom = useCallback((stat: Stat) => {
+    if (transientTimerRef.current) clearTimeout(transientTimerRef.current);
+    setTransientStat(stat);
+    transientTimerRef.current = setTimeout(() => setTransientStat(null), 2000);
+  }, []);
 
   function fireXpGain(amount: number) {
     if (amount <= 0) return;
     const id = ++floaterIdRef.current;
-    const x = 30 + Math.random() * 40;
-    setXpFloaters((prev) => [...prev, { id, xp: amount, x, y: 50 }]);
+    setXpFloaters((prev) => [...prev, { id, xp: amount, x: 30 + Math.random() * 40, y: 50 }]);
     setTimeout(() => setXpFloaters((prev) => prev.filter((f) => f.id !== id)), 1400);
 
     setPlayer((p) => {
@@ -192,7 +167,6 @@ export default function DashboardPreview() {
       if (leveled) setTimeout(() => setLevelUpVisible(true), 350);
       return { ...p, level, xpInLevel, xpToNext, title };
     });
-
     if (typeof window !== "undefined" && "vibrate" in navigator) navigator.vibrate?.(25);
   }
 
@@ -201,7 +175,10 @@ export default function DashboardPreview() {
       prev.map((q) => {
         if (q.id !== id || q.control.kind !== "checkbox") return q;
         const newDone = !q.control.done;
-        if (newDone) fireXpGain(q.baseXp);
+        if (newDone) {
+          fireXpGain(q.baseXp);
+          triggerZoom(q.stat);
+        }
         return { ...q, control: { kind: "checkbox", done: newDone } };
       }),
     );
@@ -214,6 +191,7 @@ export default function DashboardPreview() {
         const wasDone = q.control.actual >= q.control.target;
         const actual = Math.max(0, q.control.actual + delta);
         const nowDone = actual >= q.control.target;
+        if (delta > 0) triggerZoom(q.stat);
         if (!wasDone && nowDone) fireXpGain(q.baseXp);
         return { ...q, control: { ...q.control, actual } };
       }),
@@ -234,16 +212,16 @@ export default function DashboardPreview() {
     setQuests(INITIAL_QUESTS);
     setPlayer(INITIAL_PLAYER);
     setActiveStatFilter(null);
+    setTransientStat(null);
   }
 
   return (
     <main className="relative min-h-screen overflow-x-hidden bg-slate-950 text-slate-100">
-      {/* Animated gradient mesh backdrop */}
+      {/* Background mesh */}
       <div aria-hidden className="pointer-events-none fixed inset-0 -z-10">
         <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,rgba(59,130,246,0.18),transparent_55%)]" />
         <div className="absolute inset-0 animate-mesh-drift bg-[radial-gradient(ellipse_30%_25%_at_20%_30%,rgba(139,92,246,0.18),transparent_60%),radial-gradient(ellipse_25%_25%_at_80%_70%,rgba(59,130,246,0.16),transparent_60%)]" />
         <div className="absolute inset-x-0 bottom-0 h-[300px] bg-[radial-gradient(circle_at_50%_120%,rgba(168,85,247,0.12),transparent_60%)]" />
-        {/* Subtle scanline */}
         <div
           className="absolute inset-0 opacity-[0.04] mix-blend-overlay"
           style={{
@@ -253,7 +231,7 @@ export default function DashboardPreview() {
         />
       </div>
 
-      <div className="relative max-w-3xl mx-auto px-4 pt-6 pb-28 space-y-6">
+      <div className="relative max-w-5xl mx-auto px-4 pt-6 pb-28 space-y-6">
         {/* Brand bar */}
         <motion.div
           initial={{ opacity: 0, y: -6 }}
@@ -274,143 +252,134 @@ export default function DashboardPreview() {
           </button>
         </motion.div>
 
-        {/* Hero / Player card */}
+        {/* HERO: Hunter Figure + player meta on the side */}
         <motion.section
           initial={{ opacity: 0, y: 14 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.7, delay: 0.05, ease: [0.22, 1, 0.36, 1] }}
-          className="relative overflow-hidden rounded-3xl border border-slate-800/80 bg-gradient-to-b from-slate-900/90 to-slate-950 p-6 backdrop-blur-xl"
+          transition={{ duration: 0.7, ease: [0.22, 1, 0.36, 1] }}
+          className="grid grid-cols-1 gap-4 md:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)]"
         >
-          <div className="absolute inset-x-0 -top-px h-px bg-gradient-to-r from-transparent via-blue-500/70 to-transparent" />
-          <div className="absolute inset-x-0 -bottom-px h-px bg-gradient-to-r from-transparent via-purple-500/40 to-transparent" />
-
-          {/* Player ID block */}
-          <div className="flex items-start justify-between gap-3">
-            <div className="min-w-0 flex-1">
-              <div className="text-[10px] font-mono tracking-[0.3em] text-slate-500 mb-1">HUNTER ID</div>
-              <h1 className="text-3xl font-bold tracking-tight">{player.name}</h1>
-              <div className="mt-1.5 flex items-center gap-2 font-mono text-xs text-slate-400">
-                <span className="text-blue-300">{player.title}</span>
-                <span className="text-slate-700">·</span>
-                <span className="flex items-center gap-1 text-orange-300">
-                  <Flame className="h-3 w-3 animate-flame" strokeWidth={2.5} />
-                  {player.streak}d
-                </span>
-              </div>
-            </div>
-            <motion.div
-              key={player.level}
-              initial={{ scale: 0.6, rotate: -8, opacity: 0 }}
-              animate={{ scale: 1, rotate: 0, opacity: 1 }}
-              transition={{ type: "spring", stiffness: 280, damping: 18 }}
-              className="relative flex h-20 w-20 shrink-0 items-center justify-center"
-            >
-              {/* Hexagonal badge */}
-              <svg viewBox="0 0 100 100" className="absolute inset-0 h-full w-full">
-                <defs>
-                  <linearGradient id="hex" x1="0%" y1="0%" x2="100%" y2="100%">
-                    <stop offset="0%" stopColor="#3b82f6" />
-                    <stop offset="100%" stopColor="#8b5cf6" />
-                  </linearGradient>
-                </defs>
-                <polygon
-                  points="50,5 90,27 90,73 50,95 10,73 10,27"
-                  fill="url(#hex)"
-                  opacity="0.18"
-                  stroke="url(#hex)"
-                  strokeWidth="2"
-                />
-                <polygon
-                  points="50,12 84,31 84,69 50,88 16,69 16,31"
-                  fill="none"
-                  stroke="#3b82f6"
-                  strokeWidth="0.6"
-                  opacity="0.5"
-                />
-              </svg>
-              <div className="relative text-center">
-                <div className="text-[9px] font-mono tracking-widest text-blue-300/80">LV</div>
-                <div className="text-2xl font-bold leading-none text-white">{player.level}</div>
-              </div>
-            </motion.div>
-          </div>
-
-          {/* XP bar */}
-          <div className="mt-5 space-y-1.5">
-            <div className="relative h-3.5 overflow-hidden rounded-full bg-slate-800/80 ring-1 ring-slate-700/50">
-              <motion.div
-                initial={false}
-                animate={{ width: `${Math.min(100, (player.xpInLevel / player.xpToNext) * 100)}%` }}
-                transition={{ type: "spring", stiffness: 80, damping: 20 }}
-                className="absolute inset-y-0 left-0 rounded-full bg-gradient-to-r from-blue-500 via-blue-400 to-purple-500 shadow-[0_0_22px_rgba(59,130,246,0.7)]"
-              >
-                <div
-                  aria-hidden
-                  className="absolute inset-0 bg-[linear-gradient(90deg,transparent_0%,rgba(255,255,255,0.55)_50%,transparent_100%)] animate-shimmer"
-                />
-              </motion.div>
-            </div>
-            <div className="flex justify-between text-[11px] font-mono tabular-nums">
-              <span className="text-slate-400">
-                <span className="text-blue-300">{player.xpInLevel}</span>
-                <span className="text-slate-600"> / {player.xpToNext} XP</span>
-              </span>
-              <span className="text-slate-500">to Lv {player.level + 1}</span>
+          {/* Figure column */}
+          <div className="relative">
+            <HunterFigure zoom={zoom} />
+            {/* XP floaters anchored over figure */}
+            <div className="pointer-events-none absolute inset-0">
+              <AnimatePresence>
+                {xpFloaters.map((f) => (
+                  <motion.div
+                    key={f.id}
+                    initial={{ opacity: 0, y: 10, scale: 0.6 }}
+                    animate={{ opacity: 1, y: -80, scale: 1.15 }}
+                    exit={{ opacity: 0 }}
+                    transition={{ duration: 1.3, ease: [0.22, 1, 0.36, 1] }}
+                    className="absolute font-mono text-lg font-bold text-blue-300 drop-shadow-[0_0_12px_rgba(59,130,246,0.9)]"
+                    style={{ left: `${f.x}%`, top: `${f.y}%` }}
+                  >
+                    +{f.xp} XP
+                  </motion.div>
+                ))}
+              </AnimatePresence>
             </div>
           </div>
 
-          {/* XP floaters */}
-          <div className="pointer-events-none absolute inset-0">
-            <AnimatePresence>
-              {xpFloaters.map((f) => (
+          {/* Player meta column */}
+          <div className="flex flex-col gap-4">
+            {/* Player ID */}
+            <div className="relative overflow-hidden rounded-2xl border border-slate-800/80 bg-gradient-to-b from-slate-900/80 to-slate-950 p-5 backdrop-blur-xl">
+              <div className="absolute inset-x-0 -top-px h-px bg-gradient-to-r from-transparent via-blue-500/70 to-transparent" />
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0 flex-1">
+                  <div className="text-[10px] font-mono tracking-[0.3em] text-slate-500 mb-1">HUNTER ID</div>
+                  <h1 className="text-3xl font-bold tracking-tight">{player.name}</h1>
+                  <div className="mt-1.5 flex items-center gap-2 font-mono text-xs text-slate-400">
+                    <span className="text-blue-300">{player.title}</span>
+                    <span className="text-slate-700">·</span>
+                    <span className="flex items-center gap-1 text-orange-300">
+                      <Flame className="h-3 w-3 animate-flame" strokeWidth={2.5} />
+                      {player.streak}d
+                    </span>
+                  </div>
+                </div>
                 <motion.div
-                  key={f.id}
-                  initial={{ opacity: 0, y: 10, scale: 0.6 }}
-                  animate={{ opacity: 1, y: -60, scale: 1.1 }}
-                  exit={{ opacity: 0 }}
-                  transition={{ duration: 1.2, ease: [0.22, 1, 0.36, 1] }}
-                  className="absolute font-mono text-base font-bold text-blue-300 drop-shadow-[0_0_10px_rgba(59,130,246,0.8)]"
-                  style={{ left: `${f.x}%`, top: `${f.y}%` }}
+                  key={player.level}
+                  initial={{ scale: 0.6, rotate: -8, opacity: 0 }}
+                  animate={{ scale: 1, rotate: 0, opacity: 1 }}
+                  transition={{ type: "spring", stiffness: 280, damping: 18 }}
+                  className="relative flex h-20 w-20 shrink-0 items-center justify-center"
                 >
-                  +{f.xp} XP
+                  <svg viewBox="0 0 100 100" className="absolute inset-0 h-full w-full">
+                    <defs>
+                      <linearGradient id="hex" x1="0%" y1="0%" x2="100%" y2="100%">
+                        <stop offset="0%" stopColor="#3b82f6" />
+                        <stop offset="100%" stopColor="#8b5cf6" />
+                      </linearGradient>
+                    </defs>
+                    <polygon points="50,5 90,27 90,73 50,95 10,73 10,27" fill="url(#hex)" opacity="0.18" stroke="url(#hex)" strokeWidth="2" />
+                    <polygon points="50,12 84,31 84,69 50,88 16,69 16,31" fill="none" stroke="#3b82f6" strokeWidth="0.6" opacity="0.5" />
+                  </svg>
+                  <div className="relative text-center">
+                    <div className="text-[9px] font-mono tracking-widest text-blue-300/80">LV</div>
+                    <div className="text-2xl font-bold leading-none text-white">{player.level}</div>
+                  </div>
                 </motion.div>
-              ))}
-            </AnimatePresence>
-          </div>
-        </motion.section>
+              </div>
 
-        {/* Discipline Focus — animated stat avatars */}
-        <motion.section
-          initial={{ opacity: 0, y: 12 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.7, delay: 0.15, ease: [0.22, 1, 0.36, 1] }}
-          className="space-y-3"
-        >
-          <div className="flex items-end justify-between">
-            <h2 className="text-[10px] font-mono uppercase tracking-[0.3em] text-slate-500">
-              Discipline · Focus
-            </h2>
-            {activeStatFilter && (
-              <button
-                onClick={() => setActiveStatFilter(null)}
-                className="text-[10px] font-mono uppercase tracking-widest text-blue-300 hover:text-blue-200"
-              >
-                Clear filter ×
-              </button>
-            )}
-          </div>
-          <div className="grid grid-cols-5 gap-2 sm:gap-3">
-            {(Object.keys(STAT_META) as Stat[]).map((s, idx) => (
-              <StatFocusCard
-                key={s}
-                stat={s}
-                value={player.stats[s]}
-                active={activeStatFilter === s}
-                onClick={() => setActiveStatFilter((p) => (p === s ? null : s))}
-                delay={0.18 + idx * 0.06}
-                reduce={reduce ?? false}
-              />
-            ))}
+              {/* XP bar */}
+              <div className="mt-5 space-y-1.5">
+                <div className="relative h-3.5 overflow-hidden rounded-full bg-slate-800/80 ring-1 ring-slate-700/50">
+                  <motion.div
+                    initial={false}
+                    animate={{ width: `${Math.min(100, (player.xpInLevel / player.xpToNext) * 100)}%` }}
+                    transition={{ type: "spring", stiffness: 80, damping: 20 }}
+                    className="absolute inset-y-0 left-0 rounded-full bg-gradient-to-r from-blue-500 via-blue-400 to-purple-500 shadow-[0_0_22px_rgba(59,130,246,0.7)]"
+                  >
+                    <div className="absolute inset-0 bg-[linear-gradient(90deg,transparent_0%,rgba(255,255,255,0.55)_50%,transparent_100%)] animate-shimmer" />
+                  </motion.div>
+                </div>
+                <div className="flex justify-between text-[11px] font-mono tabular-nums">
+                  <span className="text-slate-400">
+                    <span className="text-blue-300">{player.xpInLevel}</span>
+                    <span className="text-slate-600"> / {player.xpToNext} XP</span>
+                  </span>
+                  <span className="text-slate-500">to Lv {player.level + 1}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Discipline focus row */}
+            <div>
+              <div className="flex items-end justify-between mb-2">
+                <h2 className="text-[10px] font-mono uppercase tracking-[0.3em] text-slate-500">
+                  Tap a region · Zoom in
+                </h2>
+                {(activeStatFilter || zoom !== "full") && (
+                  <button
+                    onClick={() => {
+                      setActiveStatFilter(null);
+                      setTransientStat(null);
+                    }}
+                    className="text-[10px] font-mono uppercase tracking-widest text-blue-300 hover:text-blue-200"
+                  >
+                    Pull back ×
+                  </button>
+                )}
+              </div>
+              <div className="grid grid-cols-5 gap-1.5 sm:gap-2">
+                {(Object.keys(STAT_META) as Stat[]).map((s, idx) => (
+                  <StatPin
+                    key={s}
+                    stat={s}
+                    value={player.stats[s]}
+                    active={zoom === s}
+                    onClick={() => {
+                      setActiveStatFilter((prev) => (prev === s ? null : s));
+                    }}
+                    delay={0.18 + idx * 0.06}
+                    reduce={reduce ?? false}
+                  />
+                ))}
+              </div>
+            </div>
           </div>
         </motion.section>
 
@@ -418,18 +387,14 @@ export default function DashboardPreview() {
         <motion.section
           initial={{ opacity: 0, y: 12 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.7, delay: 0.3, ease: [0.22, 1, 0.36, 1] }}
+          transition={{ duration: 0.7, delay: 0.3 }}
         >
           <AnimatePresence mode="wait">
-            {cleared ? (
-              <ClearedGate key="cleared" />
-            ) : (
-              <LockedGate key="locked" remaining={remaining} total={totalRequired} />
-            )}
+            {cleared ? <ClearedGate key="cleared" /> : <LockedGate key="locked" remaining={remaining} total={totalRequired} />}
           </AnimatePresence>
         </motion.section>
 
-        {/* Today's quests */}
+        {/* Today */}
         <section className="space-y-3">
           <div className="flex items-end justify-between">
             <h2 className="text-[10px] font-mono uppercase tracking-[0.3em] text-slate-500">
@@ -452,72 +417,29 @@ export default function DashboardPreview() {
                   key={q.id}
                   quest={q}
                   index={idx}
+                  zoomedOn={zoom === q.stat}
                   onCheck={() => toggleCheckbox(q.id)}
                   onBump={(d) => bumpCount(q.id, d)}
                   onTimer={() => toggleTimer(q.id)}
+                  onHover={() => triggerZoom(q.stat)}
                 />
               ))}
             </AnimatePresence>
           </ul>
         </section>
 
-        {/* Stat radar */}
-        <motion.section
-          initial={{ opacity: 0, y: 12 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.7, delay: 0.5, ease: [0.22, 1, 0.36, 1] }}
-          className="rounded-3xl border border-slate-800/80 bg-gradient-to-b from-slate-900/60 to-slate-950 p-6 backdrop-blur-xl"
-        >
-          <h2 className="text-[10px] font-mono uppercase tracking-[0.3em] text-slate-500 mb-4">
-            Stat Profile
-          </h2>
-          <div className="flex items-center gap-5">
-            <StatRadar stats={player.stats} />
-            <div className="flex-1 space-y-2.5">
-              {(Object.keys(STAT_META) as Stat[]).map((s) => {
-                const v = player.stats[s];
-                return (
-                  <div key={s} className="flex items-center gap-2.5">
-                    <span className={cn("w-10 font-mono text-[10px] font-bold tracking-widest", STAT_META[s].text)}>
-                      {s}
-                    </span>
-                    <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-slate-800/80">
-                      <motion.div
-                        initial={{ width: 0 }}
-                        animate={{ width: `${Math.min(100, (v / 60) * 100)}%` }}
-                        transition={{ duration: 0.9, delay: 0.7, ease: "easeOut" }}
-                        className={cn("h-full rounded-full bg-gradient-to-r", STAT_META[s].bar)}
-                      />
-                    </div>
-                    <span className="w-7 text-right font-mono text-xs font-bold tabular-nums text-slate-200">
-                      {v}
-                    </span>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        </motion.section>
-
         <p className="pt-2 text-center text-[10px] font-mono uppercase tracking-[0.25em] text-slate-600">
           Preview · Phase 2 wires this to Supabase
         </p>
       </div>
 
-      {/* Level up overlay */}
       <AnimatePresence>
-        {levelUpVisible && (
-          <LevelUpOverlay
-            level={player.level}
-            title={player.title}
-            onClose={() => setLevelUpVisible(false)}
-          />
-        )}
+        {levelUpVisible && <LevelUpOverlay level={player.level} title={player.title} onClose={() => setLevelUpVisible(false)} />}
       </AnimatePresence>
 
       {/* Bottom nav */}
       <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-slate-800/80 bg-slate-950/85 backdrop-blur-xl">
-        <div className="mx-auto flex max-w-3xl items-center justify-around px-2 py-2 pb-[max(0.5rem,env(safe-area-inset-bottom))]">
+        <div className="mx-auto flex max-w-5xl items-center justify-around px-2 py-2 pb-[max(0.5rem,env(safe-area-inset-bottom))]">
           <NavItem icon={HomeIcon} label="Home" active />
           <NavItem icon={BarChart3} label="Stats" />
           <NavItem icon={HistoryIcon} label="History" />
@@ -529,10 +451,10 @@ export default function DashboardPreview() {
 }
 
 /* ----------------------------------------------------------
- * Discipline Focus card — animated stat avatar
+ * Stat zoom pin (5 small buttons under figure)
  * ---------------------------------------------------------- */
 
-function StatFocusCard({
+function StatPin({
   stat,
   value,
   active,
@@ -556,141 +478,22 @@ function StatFocusCard({
       animate={{ opacity: 1, y: 0, scale: 1 }}
       transition={{ duration: 0.5, delay, ease: [0.22, 1, 0.36, 1] }}
       whileHover={reduce ? undefined : { scale: 1.04, y: -2 }}
-      whileTap={reduce ? undefined : { scale: 0.96 }}
+      whileTap={reduce ? undefined : { scale: 0.95 }}
       className={cn(
-        "group relative flex flex-col items-center gap-1.5 overflow-hidden rounded-2xl border bg-slate-900/40 p-3 backdrop-blur-sm transition-colors min-h-[112px]",
-        active
-          ? cn("ring-2", meta.ring, "border-transparent", meta.glow)
-          : "border-slate-800/80 hover:border-slate-700",
+        "group flex flex-col items-center gap-0.5 rounded-xl border bg-slate-900/40 p-2 backdrop-blur-sm transition-colors",
+        active ? cn("ring-2 ring-offset-2 ring-offset-slate-950", meta.ring, "border-transparent") : "border-slate-800/80 hover:border-slate-700",
       )}
       aria-pressed={active}
-      aria-label={`${meta.label} stat, value ${value}${active ? ", active filter" : ""}`}
     >
-      <StatArt stat={stat} size="sm" active={active} />
-      <div className="text-center">
-        <div className={cn("font-mono text-[9px] font-bold tracking-[0.2em]", meta.text)}>
-          {stat}
-        </div>
-        <div className="font-mono text-lg font-bold tabular-nums text-slate-100 leading-none">
-          {value}
-        </div>
-      </div>
+      <div className={cn("font-mono text-[9px] font-bold tracking-[0.2em]", meta.text)}>{stat}</div>
+      <div className="font-mono text-base font-bold tabular-nums text-slate-100 leading-tight">{value}</div>
+      <div className="font-mono text-[8px] tracking-widest text-slate-500 uppercase">{meta.bodyPart}</div>
     </motion.button>
   );
 }
 
 /* ----------------------------------------------------------
- * Stat Radar (pentagon chart)
- * ---------------------------------------------------------- */
-
-function StatRadar({ stats }: { stats: Record<Stat, number> }) {
-  const order: Stat[] = ["STR", "VIT", "AGI", "INT", "PER"];
-  const cx = 60;
-  const cy = 60;
-  const maxR = 50;
-  const max = 60; // scale ceiling
-
-  // Angles starting at top, clockwise
-  const angles = order.map((_, i) => -Math.PI / 2 + (i * 2 * Math.PI) / 5);
-
-  const point = (r: number, a: number) => `${cx + r * Math.cos(a)},${cy + r * Math.sin(a)}`;
-
-  const dataPoints = order.map((s, i) => {
-    const r = (stats[s] / max) * maxR;
-    return point(r, angles[i]!);
-  });
-
-  const gridR = [0.25, 0.5, 0.75, 1].map((f) => f * maxR);
-
-  return (
-    <div className="relative">
-      <svg viewBox="0 0 120 120" className="h-32 w-32 drop-shadow-[0_0_25px_rgba(59,130,246,0.25)]">
-        <defs>
-          <linearGradient id="radarFill" x1="0%" y1="0%" x2="100%" y2="100%">
-            <stop offset="0%" stopColor="#3b82f6" stopOpacity="0.45" />
-            <stop offset="100%" stopColor="#a855f7" stopOpacity="0.35" />
-          </linearGradient>
-        </defs>
-        {/* Grid pentagons */}
-        {gridR.map((r, gi) => (
-          <polygon
-            key={gi}
-            points={angles.map((a) => point(r, a)).join(" ")}
-            fill="none"
-            stroke="#1e293b"
-            strokeWidth="0.6"
-            opacity={0.6}
-          />
-        ))}
-        {/* Axes */}
-        {angles.map((a, i) => (
-          <line
-            key={i}
-            x1={cx}
-            y1={cy}
-            x2={cx + maxR * Math.cos(a)}
-            y2={cy + maxR * Math.sin(a)}
-            stroke="#1e293b"
-            strokeWidth="0.5"
-            opacity={0.7}
-          />
-        ))}
-        {/* Data polygon */}
-        <motion.polygon
-          initial={{ opacity: 0, scale: 0.6 }}
-          animate={{ opacity: 1, scale: 1 }}
-          transition={{ duration: 0.8, delay: 0.6 }}
-          points={dataPoints.join(" ")}
-          fill="url(#radarFill)"
-          stroke="#60a5fa"
-          strokeWidth="1.2"
-          style={{ transformOrigin: `${cx}px ${cy}px` }}
-        />
-        {/* Vertex dots */}
-        {dataPoints.map((p, i) => {
-          const [x, y] = p.split(",");
-          return (
-            <circle
-              key={i}
-              cx={x}
-              cy={y}
-              r="1.8"
-              fill="#dbeafe"
-              stroke="#3b82f6"
-              strokeWidth="0.8"
-            />
-          );
-        })}
-        {/* Axis labels */}
-        {order.map((s, i) => {
-          const a = angles[i]!;
-          const x = cx + (maxR + 8) * Math.cos(a);
-          const y = cy + (maxR + 8) * Math.sin(a);
-          return (
-            <text
-              key={s}
-              x={x}
-              y={y}
-              fontSize="6"
-              textAnchor="middle"
-              dominantBaseline="middle"
-              fill={
-                s === "STR" ? "#fda4af" : s === "VIT" ? "#6ee7b7" : s === "AGI" ? "#fcd34d" : s === "INT" ? "#93c5fd" : "#d8b4fe"
-              }
-              fontFamily="ui-monospace, monospace"
-              fontWeight="bold"
-            >
-              {s}
-            </text>
-          );
-        })}
-      </svg>
-    </div>
-  );
-}
-
-/* ----------------------------------------------------------
- * Relax Gate states
+ * Relax Gate variants
  * ---------------------------------------------------------- */
 
 function LockedGate({ remaining, total }: { remaining: number; total: number }) {
@@ -702,14 +505,9 @@ function LockedGate({ remaining, total }: { remaining: number; total: number }) 
       transition={{ duration: 0.4 }}
       className="relative overflow-hidden rounded-3xl border border-red-500/30 bg-gradient-to-b from-red-950/50 to-slate-950 p-6 text-center animate-pulse-glow-red"
     >
-      {/* Diagonal hazard stripes */}
       <div
-        aria-hidden
         className="absolute inset-0 opacity-[0.06]"
-        style={{
-          backgroundImage:
-            "repeating-linear-gradient(45deg, #ef4444 0 10px, transparent 10px 22px)",
-        }}
+        style={{ backgroundImage: "repeating-linear-gradient(45deg, #ef4444 0 10px, transparent 10px 22px)" }}
       />
       <div className="relative">
         <div className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-2xl bg-red-500/15 ring-2 ring-red-500/40">
@@ -720,9 +518,7 @@ function LockedGate({ remaining, total }: { remaining: number; total: number }) 
           <span className="font-mono text-2xl font-bold text-red-100 tabular-nums">{remaining}</span>
           <span className="ml-1 text-red-200/70"> of {total} quests remain</span>
         </div>
-        <div className="mt-2 text-[11px] font-mono uppercase tracking-[0.3em] text-red-300/70">
-          Train, Hunter.
-        </div>
+        <div className="mt-2 text-[11px] font-mono uppercase tracking-[0.3em] text-red-300/70">Train, Hunter.</div>
       </div>
     </motion.div>
   );
@@ -737,8 +533,7 @@ function ClearedGate() {
       transition={{ type: "spring", stiffness: 280, damping: 20 }}
       className="relative overflow-hidden rounded-3xl border border-emerald-500/40 bg-gradient-to-b from-emerald-950/60 to-slate-950 p-6 text-center shadow-[0_0_60px_rgba(16,185,129,0.25)]"
     >
-      {/* Burst rays */}
-      <div aria-hidden className="absolute inset-0">
+      <div className="absolute inset-0">
         {Array.from({ length: 8 }).map((_, i) => (
           <motion.div
             key={i}
@@ -776,15 +571,19 @@ function ClearedGate() {
 function QuestCard({
   quest,
   index,
+  zoomedOn,
   onCheck,
   onBump,
   onTimer,
+  onHover,
 }: {
   quest: Quest;
   index: number;
+  zoomedOn: boolean;
   onCheck: () => void;
   onBump: (delta: number) => void;
   onTimer: () => void;
+  onHover: () => void;
 }) {
   const meta = STAT_META[quest.stat];
   const done = isQuestDone(quest.control);
@@ -809,25 +608,21 @@ function QuestCard({
       animate={{ opacity: done ? 0.7 : 1, y: 0 }}
       exit={{ opacity: 0, y: -12 }}
       transition={{ duration: 0.4, delay: index * 0.04, ease: [0.22, 1, 0.36, 1] }}
+      onMouseEnter={onHover}
+      onTouchStart={onHover}
       className={cn(
         "relative overflow-hidden rounded-2xl border bg-slate-900/40 px-4 py-3.5 backdrop-blur-sm transition-colors",
         done && "border-emerald-500/30 bg-emerald-950/15",
         !done && quest.penalty && "border-red-500/30 bg-red-950/20",
-        !done && !quest.penalty && "border-slate-800/80",
+        !done && !quest.penalty && (zoomedOn ? cn("ring-2", meta.ring, "border-transparent") : "border-slate-800/80"),
         isTimerRunning && "animate-pulse-glow-blue border-blue-500/40",
       )}
     >
       <div className="flex items-start gap-3">
-        {/* Animated stat avatar */}
-        <div className="shrink-0">
-          <StatArt stat={quest.stat} size="sm" active={isTimerRunning || (!done && !quest.penalty)} />
-        </div>
-
-        {/* Body */}
         <div className="min-w-0 flex-1">
           <div className="mb-0.5 flex flex-wrap items-center gap-1.5">
             <span className={cn("rounded border px-1.5 py-0.5 text-[9px] font-mono font-bold tracking-[0.2em]", meta.chip)}>
-              {quest.stat}
+              {quest.stat} · {meta.bodyPart}
             </span>
             {quest.penalty && (
               <span className="flex items-center gap-1 rounded border border-red-500/40 bg-red-500/15 px-1.5 py-0.5 text-[9px] font-mono font-bold tracking-widest text-red-300">
@@ -858,7 +653,6 @@ function QuestCard({
           )}
         </div>
 
-        {/* Control */}
         <div className="shrink-0">
           {quest.control.kind === "checkbox" && (
             <motion.button
@@ -868,9 +662,7 @@ function QuestCard({
               aria-label={done ? "Mark incomplete" : "Mark done"}
               className={cn(
                 "flex h-11 w-11 items-center justify-center rounded-xl border-2 transition-colors",
-                done
-                  ? "border-emerald-400/60 bg-emerald-500/20 text-emerald-300"
-                  : "border-slate-700 bg-slate-800/60 hover:border-blue-400 hover:bg-blue-500/10",
+                done ? "border-emerald-400/60 bg-emerald-500/20 text-emerald-300" : "border-slate-700 bg-slate-800/60 hover:border-blue-400 hover:bg-blue-500/10",
               )}
             >
               {done && <Check className="h-5 w-5" strokeWidth={3} />}
@@ -896,9 +688,7 @@ function QuestCard({
                 aria-label="Increment"
                 className={cn(
                   "flex h-11 w-11 items-center justify-center rounded-xl border-2 transition-colors",
-                  done
-                    ? "border-emerald-400/60 bg-emerald-500/20 text-emerald-300"
-                    : "border-blue-500/60 bg-blue-500/15 text-blue-200 hover:bg-blue-500/25",
+                  done ? "border-emerald-400/60 bg-emerald-500/20 text-emerald-300" : "border-blue-500/60 bg-blue-500/15 text-blue-200 hover:bg-blue-500/25",
                 )}
               >
                 <Plus className="h-4 w-4" strokeWidth={3} />
@@ -922,19 +712,12 @@ function QuestCard({
                     : "border-blue-500/60 bg-blue-500/15 text-blue-200 hover:bg-blue-500/25",
               )}
             >
-              {done ? (
-                <Check className="h-5 w-5" strokeWidth={3} />
-              ) : quest.control.running ? (
-                <Pause className="h-5 w-5" strokeWidth={2.5} fill="currentColor" />
-              ) : (
-                <Play className="h-5 w-5 translate-x-px" strokeWidth={2.5} fill="currentColor" />
-              )}
+              {done ? <Check className="h-5 w-5" strokeWidth={3} /> : quest.control.running ? <Pause className="h-5 w-5" strokeWidth={2.5} fill="currentColor" /> : <Play className="h-5 w-5 translate-x-px" strokeWidth={2.5} fill="currentColor" />}
             </motion.button>
           )}
         </div>
       </div>
 
-      {/* Progress + readout */}
       {quest.control.kind !== "checkbox" && (
         <div className="mt-3 flex items-center gap-2.5">
           <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-slate-800/80">
@@ -944,11 +727,7 @@ function QuestCard({
               transition={{ type: "spring", stiffness: 90, damping: 18 }}
               className={cn(
                 "h-full rounded-full",
-                done
-                  ? "bg-emerald-500"
-                  : quest.penalty
-                    ? "bg-gradient-to-r from-red-400 to-red-600"
-                    : "bg-gradient-to-r from-blue-500 to-purple-500",
+                done ? "bg-emerald-500" : quest.penalty ? "bg-gradient-to-r from-red-400 to-red-600" : "bg-gradient-to-r from-blue-500 to-purple-500",
               )}
             />
           </div>
@@ -978,10 +757,6 @@ function formatMmSs(sec: number) {
   return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
 }
 
-/* ----------------------------------------------------------
- * Bottom nav item
- * ---------------------------------------------------------- */
-
 function NavItem({
   icon: Icon,
   label,
@@ -1006,10 +781,6 @@ function NavItem({
   );
 }
 
-/* ----------------------------------------------------------
- * Level up overlay
- * ---------------------------------------------------------- */
-
 function LevelUpOverlay({
   level,
   title,
@@ -1033,7 +804,6 @@ function LevelUpOverlay({
         transition={{ type: "spring", stiffness: 240, damping: 18 }}
         className="relative max-w-sm w-full rounded-3xl border-2 border-blue-500/60 bg-gradient-to-b from-blue-950/90 to-slate-950 p-8 text-center shadow-[0_0_80px_rgba(59,130,246,0.4)]"
       >
-        {/* Rotating ring */}
         <motion.div
           aria-hidden
           animate={{ rotate: 360 }}
