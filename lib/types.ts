@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-export const STATS = ['STR', 'VIT', 'AGI', 'INT', 'PER'] as const;
+export const STATS = ['INT', 'STR', 'DIS'] as const;
 export type StatKind = (typeof STATS)[number];
 
 export const COMPLETION_TYPES = ['checkbox', 'count', 'timer'] as const;
@@ -16,11 +16,9 @@ export interface Profile {
   total_xp: number;
   xp_in_level: number;
   xp_to_next: number;
-  stat_str: number;
-  stat_vit: number;
-  stat_agi: number;
   stat_int: number;
-  stat_per: number;
+  stat_str: number;
+  stat_dis: number;
   unallocated_points: number;
   title: string;
   streak_current: number;
@@ -74,11 +72,9 @@ export interface DailyLog {
 }
 
 export const AllocationSchema = z.object({
-  str: z.number().int().min(0),
-  vit: z.number().int().min(0),
-  agi: z.number().int().min(0),
   int: z.number().int().min(0),
-  per: z.number().int().min(0),
+  str: z.number().int().min(0),
+  dis: z.number().int().min(0),
 });
 export type Allocation = z.infer<typeof AllocationSchema>;
 

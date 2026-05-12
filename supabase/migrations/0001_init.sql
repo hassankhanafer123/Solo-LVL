@@ -1,6 +1,6 @@
 -- Enums
 create type completion_type as enum ('checkbox', 'count', 'timer');
-create type stat_kind as enum ('STR', 'VIT', 'AGI', 'INT', 'PER');
+create type stat_kind as enum ('INT', 'STR', 'DIS');
 create type daily_status as enum ('pending', 'cleared', 'missed');
 create type email_status as enum ('sent', 'failed');
 
@@ -12,11 +12,9 @@ create table profile (
   total_xp bigint not null default 0,
   xp_in_level int not null default 0,
   xp_to_next int not null default 100,
-  stat_str int not null default 10,
-  stat_vit int not null default 10,
-  stat_agi int not null default 10,
   stat_int int not null default 10,
-  stat_per int not null default 10,
+  stat_str int not null default 10,
+  stat_dis int not null default 10,
   unallocated_points int not null default 0,
   title text not null default 'Novice',
   streak_current int not null default 0,

@@ -47,26 +47,26 @@ type Quest = {
 
 type SectionMode = "hero" | Stat | "summary";
 
-const SECTION_ORDER: SectionMode[] = ["hero", "INT", "VIT", "STR", "AGI", "PER", "summary"];
+const SECTION_ORDER: SectionMode[] = ["hero", "INT", "STR", "DIS", "summary"];
 
 const STAT_META: Record<
   Stat,
   { label: string; bodyPart: string; emoji: string; tint: string; bar: string; ring: string; pageTint: string; description: string }
 > = {
-  INT: { label: "Intellect", bodyPart: "Brain", emoji: "🧠", tint: "text-blue-300", bar: "from-blue-400 to-blue-600", ring: "ring-blue-500/40", pageTint: "rgba(59,130,246,0.16)", description: "Study, read, code. Earn experience for time spent learning." },
-  VIT: { label: "Vitality", bodyPart: "Heart", emoji: "❤️", tint: "text-emerald-300", bar: "from-emerald-400 to-emerald-600", ring: "ring-emerald-500/40", pageTint: "rgba(16,185,129,0.16)", description: "Run, breathe, endure. Heart-rate work compounds over weeks." },
-  STR: { label: "Strength", bodyPart: "Chest", emoji: "💪", tint: "text-rose-300", bar: "from-rose-400 to-rose-600", ring: "ring-rose-500/40", pageTint: "rgba(244,63,94,0.16)", description: "Push, pull, squat. Reps recalibrate the muscle." },
-  AGI: { label: "Agility", bodyPart: "Legs", emoji: "⚡", tint: "text-amber-300", bar: "from-amber-400 to-amber-600", ring: "ring-amber-500/40", pageTint: "rgba(245,158,11,0.16)", description: "Speed of motion. How fast you can finish the day." },
-  PER: { label: "Perception", bodyPart: "Eyes", emoji: "👁", tint: "text-purple-300", bar: "from-purple-400 to-purple-600", ring: "ring-purple-500/40", pageTint: "rgba(168,85,247,0.16)", description: "Discipline. Awareness of streak, of cycle, of self." },
+  INT: { label: "Intelligence", bodyPart: "Brain", emoji: "🧠", tint: "text-blue-300", bar: "from-blue-400 to-blue-600", ring: "ring-blue-500/40", pageTint: "rgba(59,130,246,0.16)", description: "Study, read, code. Mental work compounds into clarity." },
+  STR: { label: "Strength", bodyPart: "Body", emoji: "💪", tint: "text-rose-300", bar: "from-rose-400 to-rose-600", ring: "ring-rose-500/40", pageTint: "rgba(244,63,94,0.16)", description: "Push, pull, run. Reps recalibrate the body." },
+  DIS: { label: "Discipline", bodyPart: "Mind", emoji: "🕯", tint: "text-purple-300", bar: "from-purple-400 to-purple-600", ring: "ring-purple-500/40", pageTint: "rgba(168,85,247,0.16)", description: "Consistency. Showing up. Awareness of streak, of cycle, of self." },
 };
 
 const INITIAL_QUESTS: Quest[] = [
-  { id: "q1", name: "Push-ups", stat: "STR", baseXp: 50, required: true, control: { kind: "count", actual: 0, target: 100 } },
-  { id: "q2", name: "Sit-ups", stat: "STR", baseXp: 50, required: true, control: { kind: "count", actual: 0, target: 100 } },
-  { id: "q3", name: "Run", stat: "VIT", baseXp: 75, required: true, control: { kind: "count", actual: 0, target: 5 } },
-  { id: "q4", name: "Study", stat: "INT", baseXp: 75, required: true, control: { kind: "timer", elapsedSec: 0, targetMin: 90, running: false } },
-  { id: "q5", name: "Read", stat: "INT", baseXp: 25, required: false, control: { kind: "timer", elapsedSec: 0, targetMin: 30, running: false } },
+  { id: "q1", name: "Study", stat: "INT", baseXp: 75, required: true, control: { kind: "timer", elapsedSec: 0, targetMin: 90, running: false } },
+  { id: "q2", name: "Read", stat: "INT", baseXp: 25, required: false, control: { kind: "timer", elapsedSec: 0, targetMin: 30, running: false } },
+  { id: "q3", name: "Push-ups", stat: "STR", baseXp: 50, required: true, control: { kind: "count", actual: 0, target: 100 } },
+  { id: "q4", name: "Sit-ups", stat: "STR", baseXp: 50, required: true, control: { kind: "count", actual: 0, target: 100 } },
+  { id: "q5", name: "Run (km)", stat: "STR", baseXp: 75, required: true, control: { kind: "count", actual: 0, target: 5 } },
   { id: "q6", name: "Squats (penalty +50%)", stat: "STR", baseXp: 75, required: true, penalty: true, control: { kind: "count", actual: 0, target: 150 } },
+  { id: "q7", name: "Meditate", stat: "DIS", baseXp: 50, required: true, control: { kind: "timer", elapsedSec: 0, targetMin: 10, running: false } },
+  { id: "q8", name: "No phone after 11pm", stat: "DIS", baseXp: 30, required: true, control: { kind: "checkbox", done: false } },
 ];
 
 const INITIAL_PLAYER = {
@@ -76,7 +76,7 @@ const INITIAL_PLAYER = {
   xpInLevel: 420,
   xpToNext: 1000,
   streak: 23,
-  stats: { STR: 42, VIT: 38, AGI: 29, INT: 51, PER: 24 } as Record<Stat, number>,
+  stats: { INT: 51, STR: 42, DIS: 36 } as Record<Stat, number>,
   heat: [1,1,1,0,1,1,1,1,1,1,0.4,1,1,1,1,1,1,1,0,1,1,1,1,1,1,1,1,1,1,0.4] as number[],
 };
 
@@ -91,11 +91,9 @@ function isQuestDone(c: Control): boolean {
 }
 
 const STAT_HEX: Record<Stat, [string, string, string]> = {
-  STR: ["#fb7185", "#e11d48", "rgba(244,63,94,0.5)"],
-  VIT: ["#34d399", "#059669", "rgba(16,185,129,0.5)"],
-  AGI: ["#fbbf24", "#d97706", "rgba(245,158,11,0.5)"],
   INT: ["#60a5fa", "#1d4ed8", "rgba(59,130,246,0.5)"],
-  PER: ["#c084fc", "#7c3aed", "rgba(168,85,247,0.5)"],
+  STR: ["#fb7185", "#e11d48", "rgba(244,63,94,0.5)"],
+  DIS: ["#c084fc", "#7c3aed", "rgba(168,85,247,0.5)"],
 };
 
 /* -------- Page -------- */
@@ -404,20 +402,7 @@ export default function Dashboard() {
           />
         </Section>
 
-        {/* SECTION: VITALITY (heart) */}
-        <Section id="VIT">
-          <BodyPartSection
-            stat="VIT"
-            value={player.stats.VIT}
-            quests={quests.filter((q) => q.stat === "VIT")}
-            onCheck={toggleCheckbox}
-            onBump={bumpCount}
-            onTimer={toggleTimer}
-            onHover={setHoveredStat}
-          />
-        </Section>
-
-        {/* SECTION: STRENGTH (chest) */}
+        {/* SECTION: STRENGTH (body) */}
         <Section id="STR">
           <BodyPartSection
             stat="STR"
@@ -430,25 +415,12 @@ export default function Dashboard() {
           />
         </Section>
 
-        {/* SECTION: AGILITY (legs) */}
-        <Section id="AGI">
+        {/* SECTION: DISCIPLINE */}
+        <Section id="DIS">
           <BodyPartSection
-            stat="AGI"
-            value={player.stats.AGI}
-            quests={quests.filter((q) => q.stat === "AGI")}
-            onCheck={toggleCheckbox}
-            onBump={bumpCount}
-            onTimer={toggleTimer}
-            onHover={setHoveredStat}
-          />
-        </Section>
-
-        {/* SECTION: PERCEPTION (eyes) */}
-        <Section id="PER">
-          <BodyPartSection
-            stat="PER"
-            value={player.stats.PER}
-            quests={quests.filter((q) => q.stat === "PER")}
+            stat="DIS"
+            value={player.stats.DIS}
+            quests={quests.filter((q) => q.stat === "DIS")}
             onCheck={toggleCheckbox}
             onBump={bumpCount}
             onTimer={toggleTimer}
@@ -506,7 +478,7 @@ function BodyPartSection({
   onHover: (s: Stat | null) => void;
 }) {
   const meta = STAT_META[stat];
-  const sectionIndex = (["INT", "VIT", "STR", "AGI", "PER"] as Stat[]).indexOf(stat) + 1;
+  const sectionIndex = (["INT", "STR", "DIS"] as Stat[]).indexOf(stat) + 1;
 
   return (
     <div className="grid grid-cols-12 gap-6 items-center">
@@ -623,7 +595,7 @@ function SummarySection({
         className="col-span-12 lg:col-span-6"
       >
         <div className="font-mono text-[11px] tracking-[0.5em] uppercase text-blue-300 mb-4">
-          07 · Today
+          04 · Today
         </div>
         <h2 className="text-mega text-[clamp(48px,9vw,120px)] text-white leading-[0.9]">
           {cleared ? "Cleared." : "Progress."}

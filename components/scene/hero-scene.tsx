@@ -16,10 +16,8 @@ export type SceneMode = "idle" | StatKind;
  *
  *   idle → wide shot of the full figure
  *   INT  → camera focuses on the head (brain)
- *   PER  → ultra-close zoom on the face/eyes
- *   VIT  → mid-shot on chest/heart
- *   STR  → broader shot on chest + arms
- *   AGI  → focus on the legs
+ *   STR  → mid-shot on chest + arms (the working body)
+ *   DIS  → pulled-back full-body posture shot (the whole composed self)
  *
  * The active body region's mesh receives an emissive override in the
  * stat color. Burst particles fire from that region on `burstId` change.
@@ -27,44 +25,34 @@ export type SceneMode = "idle" | StatKind;
  * ============================================================ */
 
 const STAT_PARTS: Record<StatKind, string[]> = {
-  STR: ["torso", "l_upperarm", "r_upperarm"],
-  VIT: ["torso"],
-  AGI: ["l_thigh", "r_thigh", "l_shin", "r_shin", "l_foot", "r_foot"],
   INT: ["head"],
-  PER: ["head"],
+  STR: ["torso", "l_upperarm", "r_upperarm", "l_forearm", "r_forearm", "l_thigh", "r_thigh", "l_shin", "r_shin"],
+  DIS: ["head", "torso", "hips", "l_thigh", "r_thigh"], // full-body posture
 };
 
 const STAT_HEX: Record<StatKind, string> = {
-  STR: "#f43f5e",
-  VIT: "#10b981",
-  AGI: "#f59e0b",
   INT: "#3b82f6",
-  PER: "#a855f7",
+  STR: "#f43f5e",
+  DIS: "#a855f7",
 };
 
 const STAT_GLOW: Record<StatKind, string> = {
-  STR: "#fb7185",
-  VIT: "#34d399",
-  AGI: "#fbbf24",
   INT: "#60a5fa",
-  PER: "#c084fc",
+  STR: "#fb7185",
+  DIS: "#c084fc",
 };
 
 const BURST_ANCHOR: Record<StatKind, [number, number, number]> = {
-  STR: [0, 0.7, 0],     // chest
-  VIT: [0, 0.85, 0],    // heart
-  AGI: [0, -1.0, 0],    // legs midpoint
-  INT: [0, 1.55, 0],    // head
-  PER: [0, 1.55, 0],    // face
+  INT: [0, 1.55, 0],   // head
+  STR: [0, 0.55, 0],   // chest center
+  DIS: [0, 0.3, 0],    // core/spine
 };
 
 const CAMERA: Record<SceneMode, { pos: [number, number, number]; look: [number, number, number]; fov: number }> = {
   idle: { pos: [0, 0.3, 4.5], look: [0, 0.3, 0], fov: 38 },
   INT:  { pos: [0.2, 1.55, 1.4], look: [0, 1.55, 0], fov: 30 },
-  PER:  { pos: [0, 1.55, 0.85], look: [0, 1.55, 0], fov: 26 },
-  VIT:  { pos: [0, 0.85, 1.3], look: [0, 0.85, 0], fov: 32 },
-  STR:  { pos: [0, 0.7, 1.8], look: [0, 0.6, 0], fov: 38 },
-  AGI:  { pos: [0.4, -1.0, 1.6], look: [0, -1.0, 0], fov: 38 },
+  STR:  { pos: [0, 0.55, 2.0], look: [0, 0.4, 0], fov: 40 },
+  DIS:  { pos: [0, 0.2, 3.6], look: [0, 0.2, 0], fov: 40 }, // pulled-back full-body posture shot
 };
 
 function lerp(a: number, b: number, t: number) {
@@ -96,15 +84,21 @@ function Part({
     return (STAT_PARTS[active] as string[]).includes(name) ? (active as StatKind) : null;
   }, [active, name]);
 
-  // Pulse (e.g., VIT heartbeat-like)
+  // Emissive material switching per highlight
   useFrame((state) => {
     if (!matRef.current) return;
     const baseColor = "#1e293b";
     const baseEmissive = "#0f172a";
     if (highlightStat) {
       matRef.current.emissive.set(STAT_HEX[highlightStat]);
-      const beat = highlightStat === "VIT" ? 0.4 + Math.sin(state.clock.elapsedTime * 4) * 0.4 : 0;
-      matRef.current.emissiveIntensity = lerp(matRef.current.emissiveIntensity, 1.5 + beat, 0.12);
+      // INT gets a subtle synapse flicker, DIS gets a steady breathing pulse
+      const flicker =
+        highlightStat === "INT"
+          ? Math.sin(state.clock.elapsedTime * 3 + name.length) * 0.3
+          : highlightStat === "DIS"
+            ? 0.3 + Math.sin(state.clock.elapsedTime * 1.2) * 0.3
+            : 0;
+      matRef.current.emissiveIntensity = lerp(matRef.current.emissiveIntensity, 1.4 + flicker, 0.12);
       matRef.current.color.set(STAT_HEX[highlightStat]);
     } else {
       matRef.current.emissive.set(baseEmissive);
@@ -208,7 +202,11 @@ function Burst({ mode, burstStat, burstId }: { mode: SceneMode; burstStat: StatK
   const groupRef = useRef<THREE.Group>(null);
   const t = useRef(0);
   const lastTrig = useRef(burstId);
-  const anchor = burstStat ? BURST_ANCHOR[burstStat] : (mode !== "idle" ? BURST_ANCHOR[mode] : [0, 0, 0]);
+  const anchor: [number, number, number] = burstStat
+    ? BURST_ANCHOR[burstStat]
+    : mode !== "idle"
+      ? BURST_ANCHOR[mode]
+      : [0, 0, 0];
   const color = burstStat ? STAT_GLOW[burstStat] : (mode !== "idle" ? STAT_GLOW[mode] : "#60a5fa");
 
   useFrame((_, delta) => {
