@@ -20,8 +20,14 @@ import confetti from "canvas-confetti";
 import { cn } from "@/lib/utils";
 import type { StatKind } from "@/lib/types";
 import { StudioCursor } from "@/components/cursor";
-import { ActivityRings, CountUp } from "@/components/animations/activity-rings";
+import { CountUp } from "@/components/animations/activity-rings";
 import { TiltCard } from "@/components/tilt-card";
+import dynamic from "next/dynamic";
+
+const HeroScene = dynamic(
+  () => import("@/components/scene/hero-scene").then((m) => m.HeroScene),
+  { ssr: false, loading: () => <SceneSkeleton /> },
+);
 
 /* -------- Types & seed (replaced by Supabase in Phase 2) -------- */
 
@@ -315,88 +321,67 @@ export default function Dashboard() {
           </div>
         </motion.section>
 
+        {/* === Section tabs (click-to-navigate) === */}
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.6, delay: 0.15 }}
+          className="mt-8 flex flex-wrap items-center gap-2"
+        >
+          <SectionTab
+            label="All"
+            sub="Overview"
+            active={activeStatFilter === null}
+            onClick={() => setActiveStatFilter(null)}
+          />
+          {(Object.keys(STAT_META) as Stat[]).map((s) => (
+            <SectionTab
+              key={s}
+              label={`${STAT_META[s].emoji} ${s}`}
+              sub={STAT_META[s].label}
+              active={activeStatFilter === s}
+              onClick={() => setActiveStatFilter(s)}
+            />
+          ))}
+        </motion.div>
+
         {/* === Bento === */}
-        <div className="mt-8 grid grid-cols-12 gap-4 md:gap-5">
-          {/* Activity Rings — centerpiece */}
-          <TiltCard className="col-span-12 lg:col-span-7 rounded-3xl">
-            <div className="relative overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-slate-900/80 to-slate-950 p-6 md:p-8 backdrop-blur-xl">
-              <div className="flex items-start justify-between">
+        <div className="mt-5 grid grid-cols-12 gap-4 md:gap-5">
+          {/* 3D Hero scene — centerpiece */}
+          <TiltCard className="col-span-12 lg:col-span-7 rounded-3xl" intensity={4}>
+            <div className="relative overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-slate-900/80 to-slate-950 backdrop-blur-xl">
+              <HeroScene mode={activeStatFilter ?? "idle"} height={420} />
+              {/* Overlay readout */}
+              <div className="pointer-events-none absolute inset-x-0 top-0 flex items-start justify-between p-4 md:p-5">
                 <div>
-                  <div className="font-mono text-[10px] tracking-[0.3em] uppercase text-slate-500">
-                    Today's progress
+                  <div className="font-mono text-[10px] tracking-[0.3em] uppercase text-slate-400">
+                    {activeStatFilter ? STAT_META[activeStatFilter].label : "System core"}
                   </div>
-                  <div className="mt-1 text-2xl font-semibold tracking-tight">
+                  <div className="mt-1 text-2xl font-semibold tracking-tight text-white">
                     {cleared ? (
                       <span className="text-emerald-300">All cleared ✓</span>
                     ) : (
-                      <span>{remaining} to go</span>
+                      <>
+                        <CountUp to={remaining} duration={500} /> to go
+                      </>
                     )}
                   </div>
                 </div>
-                <div className="text-right font-mono text-xs text-slate-400">
-                  <div className="text-blue-300 text-lg font-bold tabular-nums">
+                <div className="text-right">
+                  <div className="font-mono text-[10px] tracking-[0.3em] uppercase text-slate-400">
+                    XP today
+                  </div>
+                  <div className="mt-1 text-2xl font-bold tabular-nums text-blue-300">
                     <CountUp to={totalXpToday} duration={900} />
                   </div>
-                  <div className="text-[10px] tracking-[0.2em] uppercase text-slate-500">XP today</div>
                 </div>
               </div>
-
-              <div className="mt-6 grid grid-cols-12 items-center gap-6">
-                <div className="col-span-12 sm:col-span-7 flex justify-center">
-                  <ActivityRings
-                    size={280}
-                    centerLabel="Lv"
-                    centerValue={String(player.level)}
-                    rings={[
-                      {
-                        label: "Quests",
-                        progress: completedRequired / Math.max(1, totalRequired),
-                        gradient: ["#fb7185", "#e11d48"],
-                        glow: "rgba(244,63,94,0.6)",
-                        value: `${completedRequired}/${totalRequired}`,
-                        goal: "required cleared",
-                      },
-                      {
-                        label: "XP",
-                        progress: Math.min(1, totalXpToday / xpGoalToday),
-                        gradient: ["#60a5fa", "#7c3aed"],
-                        glow: "rgba(59,130,246,0.6)",
-                        value: `${totalXpToday}`,
-                        goal: `of ${xpGoalToday} xp`,
-                      },
-                      {
-                        label: "Active",
-                        progress: Math.min(1, activeMinutes / 120),
-                        gradient: ["#fbbf24", "#d97706"],
-                        glow: "rgba(251,191,36,0.6)",
-                        value: `${activeMinutes}m`,
-                        goal: "of 2h",
-                      },
-                    ]}
-                  />
+              <div className="pointer-events-none absolute inset-x-0 bottom-0 flex items-end justify-between p-4 md:p-5">
+                <div className="font-mono text-[10px] tracking-[0.3em] uppercase text-slate-500">
+                  Click a stat to focus
                 </div>
-
-                {/* Ring legend */}
-                <div className="col-span-12 sm:col-span-5 space-y-3">
-                  <RingLegend dot="from-rose-400 to-rose-600" label="Quests cleared" value={`${completedRequired} / ${totalRequired}`} />
-                  <RingLegend dot="from-blue-400 to-purple-500" label="XP earned" value={`${totalXpToday} / ${xpGoalToday}`} />
-                  <RingLegend dot="from-amber-400 to-amber-600" label="Active minutes" value={`${activeMinutes} / 120`} />
-                  <div className="pt-3 border-t border-white/5">
-                    <div className="flex items-baseline justify-between text-xs font-mono">
-                      <span className="text-slate-400 uppercase tracking-widest">Level</span>
-                      <span className="text-blue-300 tabular-nums">
-                        <CountUp to={player.xpInLevel} duration={900} /> / {player.xpToNext}
-                      </span>
-                    </div>
-                    <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-white/5">
-                      <motion.div
-                        initial={false}
-                        animate={{ width: `${Math.min(100, (player.xpInLevel / player.xpToNext) * 100)}%` }}
-                        transition={{ type: "spring", stiffness: 80, damping: 22 }}
-                        className="h-full rounded-full bg-gradient-to-r from-blue-500 to-purple-500 shadow-[0_0_18px_rgba(59,130,246,0.6)]"
-                      />
-                    </div>
-                  </div>
+                <div className="font-mono text-[10px] tracking-[0.3em] uppercase text-slate-500">
+                  WebGL · Live
                 </div>
               </div>
             </div>
@@ -584,6 +569,56 @@ function nextTitle(level: number) {
   if (level < 50) return { name: "Necromancer", level: 50, bonus: "+15% XP" };
   if (level < 100) return { name: "Shadow Monarch", level: 100, bonus: "+20% XP" };
   return { name: "Maxed", level: 100, bonus: "+20% XP" };
+}
+
+function SectionTab({
+  label,
+  sub,
+  active,
+  onClick,
+}: {
+  label: string;
+  sub: string;
+  active: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <motion.button
+      type="button"
+      onClick={onClick}
+      data-cursor="hover"
+      whileHover={{ y: -2 }}
+      whileTap={{ scale: 0.96 }}
+      className={cn(
+        "relative flex items-center gap-2 rounded-full border px-4 py-2 font-mono text-[11px] tracking-[0.2em] uppercase transition-colors",
+        active
+          ? "border-white/30 bg-white/15 text-white"
+          : "border-white/10 bg-white/[0.03] text-slate-400 hover:bg-white/10 hover:text-slate-200",
+      )}
+    >
+      <span className="font-bold tracking-normal">{label}</span>
+      <span className="text-slate-500 text-[9px]">·</span>
+      <span className="text-slate-500">{sub}</span>
+      {active && (
+        <motion.span
+          layoutId="active-tab-glow"
+          className="absolute inset-0 rounded-full ring-2 ring-blue-400/60 shadow-[0_0_24px_rgba(59,130,246,0.4)]"
+          transition={{ type: "spring", stiffness: 380, damping: 30 }}
+        />
+      )}
+    </motion.button>
+  );
+}
+
+function SceneSkeleton() {
+  return (
+    <div className="grid place-items-center rounded-3xl border border-white/10 bg-slate-900/40" style={{ height: 420 }}>
+      <div className="text-center space-y-2">
+        <div className="mx-auto h-10 w-10 rounded-full border-2 border-blue-400/40 border-t-blue-400 animate-spin" />
+        <div className="font-mono text-[10px] tracking-widest uppercase text-slate-500">Loading WebGL…</div>
+      </div>
+    </div>
+  );
 }
 
 function Pill({ icon, label, sub }: { icon: React.ReactNode; label: string; sub: string }) {
