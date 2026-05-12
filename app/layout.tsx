@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Inter, JetBrains_Mono } from "next/font/google";
+import { Inter, JetBrains_Mono, Bebas_Neue } from "next/font/google";
 import "./globals.css";
 
 const inter = Inter({
@@ -12,6 +12,12 @@ const jetbrainsMono = JetBrains_Mono({
   variable: "--font-mono",
   subsets: ["latin"],
   weight: ["400", "500", "600", "700"],
+});
+
+const bebas = Bebas_Neue({
+  variable: "--font-display",
+  subsets: ["latin"],
+  weight: ["400"],
 });
 
 export const metadata: Metadata = {
@@ -34,7 +40,7 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${inter.variable} ${jetbrainsMono.variable} dark h-full antialiased`}
+      className={`${inter.variable} ${jetbrainsMono.variable} ${bebas.variable} dark h-full antialiased`}
     >
       <body className="min-h-full flex flex-col bg-slate-950 text-slate-100 selection:bg-blue-500/30 selection:text-blue-50">
         {children}
