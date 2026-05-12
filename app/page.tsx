@@ -256,12 +256,12 @@ export default function DashboardPreview() {
         </button>
       </header>
 
-      {/* ============= HERO ============= */}
+      {/* ============= HERO — pure typography ============= */}
       <section
         ref={heroRef}
-        className="relative z-10 min-h-screen px-6 pt-28 pb-12 grid grid-cols-12 gap-4 items-center"
+        className="relative z-10 min-h-[100svh] px-6 md:px-12 pt-32 pb-20 flex flex-col justify-between"
       >
-        {/* Vertical side label */}
+        {/* Vertical side rails */}
         <div className="absolute left-3 top-1/2 -translate-y-1/2 hidden lg:block">
           <div className="rotate-180 [writing-mode:vertical-rl] font-mono text-[10px] tracking-[0.5em] text-slate-500">
             DAILY · DESCENT · {new Date().toISOString().slice(0, 10)}
@@ -273,12 +273,12 @@ export default function DashboardPreview() {
           </div>
         </div>
 
-        <motion.div style={{ y: heroTitleY, opacity: heroOpacity }} className="col-span-12 md:col-span-7">
+        <motion.div style={{ y: heroTitleY, opacity: heroOpacity }} className="max-w-6xl">
           <motion.div
             initial={{ opacity: 0, y: 24 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.8, ease: [0.22, 1, 0.36, 1] }}
-            className="font-mono text-[11px] tracking-[0.4em] text-blue-300 mb-5"
+            className="font-mono text-[11px] tracking-[0.4em] text-blue-300 mb-6"
           >
             ⟶ DAY {player.streak} · LV {player.level} · {player.title.toUpperCase()}
           </motion.div>
@@ -286,34 +286,32 @@ export default function DashboardPreview() {
           <motion.h1
             initial={{ opacity: 0, y: 40 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.9, ease: [0.22, 1, 0.36, 1], delay: 0.05 }}
-            className="text-mega text-[clamp(64px,14vw,220px)] text-white"
+            transition={{ duration: 1, ease: [0.22, 1, 0.36, 1], delay: 0.05 }}
+            className="text-mega text-[clamp(72px,18vw,260px)] text-white"
           >
             Train.<br />
             <span className="bg-gradient-to-r from-blue-400 via-purple-400 to-rose-400 bg-clip-text text-transparent">
               Hunter.
             </span>
           </motion.h1>
+        </motion.div>
 
-          <motion.p
-            initial={{ opacity: 0, y: 18 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.8, delay: 0.25 }}
-            className="mt-6 max-w-md text-base text-slate-400 leading-relaxed"
-          >
+        <motion.div
+          initial={{ opacity: 0, y: 18 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.8, delay: 0.35 }}
+          className="grid grid-cols-12 gap-6 items-end max-w-6xl"
+        >
+          <p className="col-span-12 md:col-span-7 text-base text-slate-400 leading-relaxed max-w-md">
             The System has assigned you {totalRequired} quests today. Clear them all to earn your rest.
             Discipline compounds. The body recalibrates. Level up.
-          </motion.p>
+          </p>
 
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ delay: 0.6 }}
-            className="mt-10 flex items-center gap-4"
-          >
+          <div className="col-span-12 md:col-span-5 flex items-center gap-4 md:justify-end">
             <a
-              href="#today"
+              href="#scan"
               className="group inline-flex items-center gap-3 rounded-full border border-white/15 bg-white/5 px-5 py-3 font-mono text-xs tracking-[0.3em] uppercase text-white backdrop-blur transition-colors hover:bg-white/10"
+              data-cursor="hover"
             >
               Begin Descent
               <span className="grid h-6 w-6 place-items-center rounded-full bg-blue-500 text-white transition-transform group-hover:translate-y-0.5">
@@ -323,51 +321,104 @@ export default function DashboardPreview() {
             <span className="font-mono text-[10px] tracking-[0.4em] uppercase text-slate-500">
               Scroll
             </span>
-          </motion.div>
+          </div>
         </motion.div>
+      </section>
 
-        {/* Hunter figure */}
-        <motion.div
-          style={{ scale: heroFigureScale, opacity: heroOpacity }}
-          className="col-span-12 md:col-span-5 relative"
-        >
-          <div className="relative mx-auto max-w-xs md:max-w-none">
-            <HunterFigure zoom={zoom} />
-            {/* XP floaters anchored over figure */}
-            <div className="pointer-events-none absolute inset-0">
-              <AnimatePresence>
-                {xpFloaters.map((f) => (
+      {/* ============= SCAN — Hunter figure HUD ============= */}
+      <section id="scan" className="relative z-10 px-6 md:px-12 py-16 md:py-24">
+        <Reveal>
+          <SectionEyebrow>01 · Scan</SectionEyebrow>
+        </Reveal>
+
+        <div className="mt-6 grid grid-cols-12 gap-6 md:gap-10 items-start">
+          {/* Console (left) */}
+          <Reveal>
+            <motion.div
+              style={{ scale: heroFigureScale }}
+              className="col-span-12 md:col-span-5 relative mx-auto max-w-sm md:max-w-none"
+            >
+              <HunterFigure zoom={zoom} />
+              <div className="pointer-events-none absolute inset-0">
+                <AnimatePresence>
+                  {xpFloaters.map((f) => (
+                    <motion.div
+                      key={f.id}
+                      initial={{ opacity: 0, y: 10, scale: 0.6 }}
+                      animate={{ opacity: 1, y: -90, scale: 1.15 }}
+                      exit={{ opacity: 0 }}
+                      transition={{ duration: 1.3, ease: [0.22, 1, 0.36, 1] }}
+                      className="absolute font-display text-3xl text-blue-300 drop-shadow-[0_0_18px_rgba(59,130,246,0.95)]"
+                      style={{ left: `${f.x}%`, top: `${f.y}%` }}
+                    >
+                      +{f.xp} XP
+                    </motion.div>
+                  ))}
+                </AnimatePresence>
+              </div>
+            </motion.div>
+          </Reveal>
+
+          {/* Status (right) */}
+          <Reveal>
+            <div className="col-span-12 md:col-span-7 space-y-6">
+              <div>
+                <h2 className="text-mega text-[clamp(36px,6vw,80px)] text-white">
+                  Status<br />
+                  <span className="text-slate-500">Readout.</span>
+                </h2>
+              </div>
+
+              {/* XP block */}
+              <div className="space-y-3">
+                <div className="flex items-baseline justify-between font-mono text-[10px] uppercase tracking-[0.3em] text-slate-400">
+                  <span>Experience</span>
+                  <span className="tabular-nums">
+                    <span className="text-blue-300">{player.xpInLevel}</span>
+                    <span className="text-slate-700"> / {player.xpToNext}</span>
+                  </span>
+                </div>
+                <div className="relative h-2 overflow-hidden rounded-full bg-white/5 ring-1 ring-white/10">
                   <motion.div
-                    key={f.id}
-                    initial={{ opacity: 0, y: 10, scale: 0.6 }}
-                    animate={{ opacity: 1, y: -80, scale: 1.15 }}
-                    exit={{ opacity: 0 }}
-                    transition={{ duration: 1.3, ease: [0.22, 1, 0.36, 1] }}
-                    className="absolute font-display text-3xl text-blue-300 drop-shadow-[0_0_18px_rgba(59,130,246,0.95)]"
-                    style={{ left: `${f.x}%`, top: `${f.y}%` }}
+                    initial={false}
+                    animate={{ width: `${Math.min(100, (player.xpInLevel / player.xpToNext) * 100)}%` }}
+                    transition={{ type: "spring", stiffness: 80, damping: 20 }}
+                    className="absolute inset-y-0 left-0 rounded-full bg-gradient-to-r from-blue-500 via-blue-400 to-purple-500 shadow-[0_0_22px_rgba(59,130,246,0.7)]"
                   >
-                    +{f.xp} XP
+                    <div className="absolute inset-0 bg-[linear-gradient(90deg,transparent_0%,rgba(255,255,255,0.55)_50%,transparent_100%)] animate-shimmer" />
                   </motion.div>
-                ))}
-              </AnimatePresence>
-            </div>
-          </div>
+                </div>
+              </div>
 
-          {/* Stat pins under figure */}
-          <div className="mt-4 grid grid-cols-5 gap-1.5">
-            {(Object.keys(STAT_META) as Stat[]).map((s, idx) => (
-              <StatPin
-                key={s}
-                stat={s}
-                value={player.stats[s]}
-                active={zoom === s}
-                onClick={() => setActiveStatFilter((prev) => (prev === s ? null : s))}
-                delay={0.5 + idx * 0.06}
-                reduce={reduce ?? false}
-              />
-            ))}
-          </div>
-        </motion.div>
+              {/* Stat grid */}
+              <div>
+                <div className="font-mono text-[10px] uppercase tracking-[0.3em] text-slate-500 mb-2">
+                  Tap a region · Camera locks
+                </div>
+                <div className="grid grid-cols-5 gap-2">
+                  {(Object.keys(STAT_META) as Stat[]).map((s, idx) => (
+                    <StatPin
+                      key={s}
+                      stat={s}
+                      value={player.stats[s]}
+                      active={zoom === s}
+                      onClick={() => setActiveStatFilter((prev) => (prev === s ? null : s))}
+                      delay={idx * 0.06}
+                      reduce={reduce ?? false}
+                    />
+                  ))}
+                </div>
+              </div>
+
+              {/* Quick stats */}
+              <div className="grid grid-cols-3 gap-2 pt-2">
+                <Stat kv="Level" v={player.level} />
+                <Stat kv="Streak" v={player.streak} suffix="d" />
+                <Stat kv="Cleared" v={`${totalRequired - remaining}/${totalRequired}`} />
+              </div>
+            </div>
+          </Reveal>
+        </div>
       </section>
 
       {/* ============= MARQUEE DIVIDER ============= */}
@@ -385,47 +436,8 @@ export default function DashboardPreview() {
         />
       </section>
 
-      {/* ============= XP & PLAYER STATUS ============= */}
-      <section className="relative z-10 px-6 py-16 md:py-24">
-        <Reveal>
-          <div className="grid grid-cols-12 gap-6 items-end">
-            <div className="col-span-12 md:col-span-7">
-              <SectionEyebrow>01 · Status</SectionEyebrow>
-              <h2 className="text-mega text-[clamp(40px,7vw,90px)] text-white mt-3">
-                Experience<br />
-                <span className="text-slate-500">Compounds.</span>
-              </h2>
-            </div>
-            <div className="col-span-12 md:col-span-5 space-y-4">
-              <div className="flex items-baseline justify-between font-mono text-xs uppercase tracking-widest text-slate-400">
-                <span>XP to next</span>
-                <span className="tabular-nums">
-                  <span className="text-blue-300">{player.xpInLevel}</span>
-                  <span className="text-slate-700"> / {player.xpToNext}</span>
-                </span>
-              </div>
-              <div className="relative h-2 overflow-hidden rounded-full bg-white/5 ring-1 ring-white/10">
-                <motion.div
-                  initial={false}
-                  animate={{ width: `${Math.min(100, (player.xpInLevel / player.xpToNext) * 100)}%` }}
-                  transition={{ type: "spring", stiffness: 80, damping: 20 }}
-                  className="absolute inset-y-0 left-0 rounded-full bg-gradient-to-r from-blue-500 via-blue-400 to-purple-500 shadow-[0_0_22px_rgba(59,130,246,0.7)]"
-                >
-                  <div className="absolute inset-0 bg-[linear-gradient(90deg,transparent_0%,rgba(255,255,255,0.55)_50%,transparent_100%)] animate-shimmer" />
-                </motion.div>
-              </div>
-              <div className="grid grid-cols-3 gap-2 pt-4">
-                <Stat kv="Level" v={player.level} />
-                <Stat kv="Streak" v={player.streak} suffix="d" />
-                <Stat kv="Cleared" v={`${totalRequired - remaining}/${totalRequired}`} />
-              </div>
-            </div>
-          </div>
-        </Reveal>
-      </section>
-
       {/* ============= RELAX GATE ============= */}
-      <section className="relative z-10 px-6 py-12">
+      <section className="relative z-10 px-6 md:px-12 py-12">
         <Reveal>
           <SectionEyebrow>02 · Gate</SectionEyebrow>
           <div className="mt-4">

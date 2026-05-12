@@ -4,49 +4,55 @@ import { motion, AnimatePresence } from "motion/react";
 import type { StatKind } from "@/lib/types";
 
 /**
- * <HunterFigure /> — the central "you" figure.
+ * <HunterFigure /> — central HUD console.
  *
- * Shows a stylized hooded hunter silhouette. When a stat is being interacted
- * with, the camera zooms into the relevant body region and a detailed,
- * stat-specific anatomy animation plays on top:
+ * A clean technical "System scan" display. The body is drawn as a minimal
+ * iconographic anatomy diagram (no attempt at realism — pure constructivist
+ * lines/arcs). The composition is framed inside a Solo Leveling-style HUD
+ * window with corner brackets, scan lines, data readouts, and a top stat
+ * dial.
  *
- *   STR → chest (flexing muscle fibers)
- *   VIT → heart (anatomical heart with pumping blood)
- *   AGI → legs  (running motion + kinetic lines)
- *   INT → head  (neural synapses firing)
- *   PER → eyes  (scanning iris with radar lines)
+ * When a stat is focused, the camera "zooms" via SVG viewBox spring and a
+ * stat-specific overlay activates on the corresponding body region:
  *
- * The viewBox is animated smoothly via framer-motion spring physics, giving a
- * cinematic camera move from a wide shot of the figure to an extreme close-up.
+ *   STR → chest        VIT → heart        AGI → legs
+ *   INT → brain        PER → eyes
  */
 
 export type ZoomTarget = "full" | StatKind;
 
-const STAT_TO_ZOOM: Record<StatKind, ZoomTarget> = {
-  STR: "STR",
-  VIT: "VIT",
-  AGI: "AGI",
-  INT: "INT",
-  PER: "PER",
+const STAT_TINT: Record<StatKind, string> = {
+  STR: "rgba(244,63,94,0.55)",
+  VIT: "rgba(16,185,129,0.55)",
+  AGI: "rgba(245,158,11,0.6)",
+  INT: "rgba(59,130,246,0.55)",
+  PER: "rgba(168,85,247,0.55)",
 };
-export { STAT_TO_ZOOM };
 
-/* ---- viewBox per zoom target (full figure is 0 0 200 400) ---- */
+const STAT_HEX: Record<StatKind, string> = {
+  STR: "#fb7185",
+  VIT: "#34d399",
+  AGI: "#fbbf24",
+  INT: "#60a5fa",
+  PER: "#c084fc",
+};
+
 const VIEWBOX = {
   full: { x: 0, y: 0, w: 200, h: 400 },
-  INT: { x: 55, y: 0, w: 90, h: 90 },   // head / brain
-  PER: { x: 70, y: 32, w: 60, h: 36 },  // eyes
-  STR: { x: 35, y: 80, w: 130, h: 90 }, // chest + biceps
-  VIT: { x: 65, y: 105, w: 70, h: 60 }, // heart
-  AGI: { x: 50, y: 220, w: 100, h: 140 }, // legs
+  INT: { x: 60, y: 0, w: 80, h: 80 },
+  PER: { x: 75, y: 28, w: 50, h: 30 },
+  STR: { x: 40, y: 80, w: 120, h: 90 },
+  VIT: { x: 70, y: 100, w: 60, h: 60 },
+  AGI: { x: 50, y: 220, w: 100, h: 150 },
 } as const;
 
-const STAT_TINT: Record<StatKind, string> = {
-  STR: "rgba(244,63,94,0.4)",
-  VIT: "rgba(16,185,129,0.4)",
-  AGI: "rgba(245,158,11,0.45)",
-  INT: "rgba(59,130,246,0.4)",
-  PER: "rgba(168,85,247,0.4)",
+const LABEL: Record<ZoomTarget, string> = {
+  full: "FULL SCAN",
+  STR: "PECTORALIS · STR",
+  VIT: "CARDIAC · VIT",
+  AGI: "QUADRICEPS · AGI",
+  INT: "CEREBRUM · INT",
+  PER: "OCULAR · PER",
 };
 
 export function HunterFigure({
@@ -58,685 +64,534 @@ export function HunterFigure({
 }) {
   const v = VIEWBOX[zoom];
   const viewBoxStr = `${v.x} ${v.y} ${v.w} ${v.h}`;
+  const tint = zoom === "full" ? "rgba(59,130,246,0.35)" : STAT_TINT[zoom];
+  const accent = zoom === "full" ? "#60a5fa" : STAT_HEX[zoom];
 
   return (
     <div className={`relative ${className}`}>
-      {/* Background glow tinted by active stat */}
+      {/* Faint glow */}
       <motion.div
         aria-hidden
-        className="absolute inset-0 rounded-2xl blur-3xl pointer-events-none"
+        className="pointer-events-none absolute -inset-6 rounded-[40px] blur-3xl opacity-60"
         initial={false}
-        animate={{
-          backgroundColor: zoom === "full" ? "rgba(59,130,246,0.18)" : STAT_TINT[zoom],
-        }}
+        animate={{ backgroundColor: tint }}
         transition={{ duration: 0.8 }}
       />
 
-      {/* Camera viewport */}
-      <div className="relative aspect-[5/8] w-full overflow-hidden rounded-2xl border border-slate-800/80 bg-gradient-to-b from-slate-900/60 to-slate-950">
-        {/* Hex grid scan lines */}
-        <div
-          aria-hidden
-          className="absolute inset-0 opacity-[0.05] pointer-events-none"
-          style={{
-            backgroundImage:
-              "repeating-linear-gradient(0deg, rgba(255,255,255,0.6) 0 1px, transparent 1px 4px)",
-          }}
-        />
+      {/* Console frame */}
+      <div className="relative rounded-[28px] border border-white/10 bg-gradient-to-b from-slate-900/40 to-slate-950/80 p-5 backdrop-blur-xl">
+        {/* Top corner brackets */}
+        <Bracket pos="tl" />
+        <Bracket pos="tr" />
+        <Bracket pos="bl" />
+        <Bracket pos="br" />
 
-        {/* The figure */}
-        <motion.svg
-          viewBox={viewBoxStr}
-          initial={false}
-          animate={{ viewBox: viewBoxStr } as any}
-          transition={{ type: "spring", stiffness: 90, damping: 22, mass: 1.2 }}
-          preserveAspectRatio="xMidYMid meet"
-          className="absolute inset-0 h-full w-full"
-        >
-          <defs>
-            <linearGradient id="hunterBody" x1="0%" y1="0%" x2="0%" y2="100%">
-              <stop offset="0%" stopColor="#1e293b" />
-              <stop offset="100%" stopColor="#0f172a" />
-            </linearGradient>
-            <linearGradient id="hunterEdge" x1="0%" y1="0%" x2="100%" y2="100%">
-              <stop offset="0%" stopColor="#3b82f6" stopOpacity="0.9" />
-              <stop offset="100%" stopColor="#8b5cf6" stopOpacity="0.9" />
-            </linearGradient>
-            <radialGradient id="hunterCore" cx="50%" cy="50%" r="50%">
-              <stop offset="0%" stopColor="#60a5fa" stopOpacity="0.4" />
-              <stop offset="100%" stopColor="#60a5fa" stopOpacity="0" />
-            </radialGradient>
-            <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
-              <feGaussianBlur stdDeviation="1.2" result="blur" />
-              <feMerge>
-                <feMergeNode in="blur" />
-                <feMergeNode in="SourceGraphic" />
-              </feMerge>
-            </filter>
-          </defs>
-
-          {/* Hooded silhouette (one continuous path) */}
-          {/* Hood (drops over head and shoulders) */}
-          <path
-            d="M 100 4
-               C 70 4, 60 18, 60 38
-               L 60 56
-               C 60 64, 64 72, 70 76
-               L 60 86
-               C 50 92, 40 100, 38 116
-               L 32 142
-               L 38 152
-               L 50 156
-               L 50 178
-               L 56 182
-               L 56 220
-               L 64 230
-               L 70 270
-               L 72 320
-               L 78 360
-               L 82 380
-               L 92 390
-               L 100 390
-               L 108 390
-               L 118 380
-               L 122 360
-               L 128 320
-               L 130 270
-               L 136 230
-               L 144 220
-               L 144 182
-               L 150 178
-               L 150 156
-               L 162 152
-               L 168 142
-               L 162 116
-               C 160 100, 150 92, 140 86
-               L 130 76
-               C 136 72, 140 64, 140 56
-               L 140 38
-               C 140 18, 130 4, 100 4 Z"
-            fill="url(#hunterBody)"
-            stroke="url(#hunterEdge)"
-            strokeWidth="1"
-            opacity="0.95"
-          />
-
-          {/* Core glow (chest center) */}
-          <ellipse cx="100" cy="130" rx="22" ry="32" fill="url(#hunterCore)" opacity="0.5" />
-
-          {/* Hood inner shadow that obscures face */}
-          <path
-            d="M 78 30
-               C 78 50, 88 64, 100 64
-               C 112 64, 122 50, 122 30
-               Z"
-            fill="#020617"
-          />
-
-          {/* Eyes — two faint glow dots inside the hood */}
-          <g>
-            <circle cx="92" cy="44" r="1.6" fill="#60a5fa" opacity="0.9">
-              <animate attributeName="opacity" values="0.7;1;0.7" dur="2.2s" repeatCount="indefinite" />
-            </circle>
-            <circle cx="108" cy="44" r="1.6" fill="#60a5fa" opacity="0.9">
-              <animate attributeName="opacity" values="0.7;1;0.7" dur="2.2s" repeatCount="indefinite" />
-            </circle>
-          </g>
-
-          {/* Bicep highlights (visible during chest zoom) */}
-          <path
-            d="M 44 124 C 36 132, 38 152, 50 156"
-            fill="none"
-            stroke="#475569"
-            strokeWidth="0.8"
-            opacity="0.5"
-          />
-          <path
-            d="M 156 124 C 164 132, 162 152, 150 156"
-            fill="none"
-            stroke="#475569"
-            strokeWidth="0.8"
-            opacity="0.5"
-          />
-
-          {/* Overlay anatomy per zoom state — switches based on the active region */}
-          <AnimatePresence mode="wait">
-            {zoom === "INT" && <BrainOverlay key="int" />}
-            {zoom === "PER" && <EyeOverlay key="per" />}
-            {zoom === "STR" && <MuscleOverlay key="str" />}
-            {zoom === "VIT" && <HeartOverlay key="vit" />}
-            {zoom === "AGI" && <LegsOverlay key="agi" />}
-            {zoom === "full" && <PulseRing key="idle" />}
-          </AnimatePresence>
-        </motion.svg>
-
-        {/* Bottom label */}
-        <div className="absolute inset-x-0 bottom-0 flex items-center justify-between bg-gradient-to-t from-slate-950 to-transparent px-3 pb-3 pt-10">
-          <span className="font-mono text-[10px] uppercase tracking-[0.3em] text-slate-400">
-            Hunter Body
-          </span>
-          <span className="font-mono text-[10px] uppercase tracking-widest">
-            {zoom === "full" ? (
-              <span className="text-blue-300">IDLE</span>
-            ) : (
-              <span className={zoneTint(zoom)}>FOCUS · {zoneLabel(zoom)}</span>
-            )}
-          </span>
+        {/* Header strip */}
+        <div className="flex items-center justify-between text-[10px] font-mono tracking-[0.3em] uppercase">
+          <div className="flex items-center gap-2 text-slate-400">
+            <motion.span
+              animate={{ opacity: [1, 0.4, 1] }}
+              transition={{ duration: 1.6, repeat: Infinity }}
+              className="inline-block h-1.5 w-1.5 rounded-full"
+              style={{ backgroundColor: accent }}
+            />
+            <span style={{ color: accent }}>● SCAN</span>
+            <span className="text-slate-600">·</span>
+            <span>v0.1</span>
+          </div>
+          <div className="font-mono text-[10px] text-slate-500">
+            {String(new Date().getHours()).padStart(2, "0")}:{String(new Date().getMinutes()).padStart(2, "0")}
+          </div>
         </div>
 
-        {/* Camera reticle when zoomed */}
-        {zoom !== "full" && (
+        {/* Top divider */}
+        <div className="my-3 h-px bg-gradient-to-r from-transparent via-white/15 to-transparent" />
+
+        {/* Viewport */}
+        <div className="relative aspect-[5/7] w-full overflow-hidden rounded-2xl border border-white/10 bg-[radial-gradient(circle_at_50%_30%,rgba(15,23,42,0.5),rgba(2,6,23,0.95))]">
+          {/* Cross-hatch background grid */}
+          <div
+            aria-hidden
+            className="absolute inset-0 opacity-[0.07]"
+            style={{
+              backgroundImage:
+                "linear-gradient(rgba(255,255,255,0.6) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.6) 1px, transparent 1px)",
+              backgroundSize: "20px 20px",
+            }}
+          />
+          {/* Center crosshair */}
+          <div aria-hidden className="absolute inset-0">
+            <div className="absolute left-1/2 top-0 h-full w-px bg-white/5 -translate-x-1/2" />
+            <div className="absolute left-0 top-1/2 h-px w-full bg-white/5 -translate-y-1/2" />
+          </div>
+
+          {/* Subtle scan line sweep */}
           <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="pointer-events-none absolute inset-0"
+            aria-hidden
+            className="absolute inset-x-0 h-12 pointer-events-none"
+            style={{
+              background: `linear-gradient(180deg, transparent 0%, ${accent}33 50%, transparent 100%)`,
+            }}
+            animate={{ y: ["-20%", "120%"] }}
+            transition={{ duration: 4, repeat: Infinity, ease: "linear" }}
+          />
+
+          {/* The SVG body */}
+          <motion.svg
+            viewBox={viewBoxStr}
+            initial={false}
+            animate={{ viewBox: viewBoxStr } as any}
+            transition={{ type: "spring", stiffness: 90, damping: 22, mass: 1.2 }}
+            preserveAspectRatio="xMidYMid meet"
+            className="absolute inset-0 h-full w-full"
           >
-            <div className="absolute left-3 top-3 h-4 w-4 border-l-2 border-t-2 border-blue-400/60" />
-            <div className="absolute right-3 top-3 h-4 w-4 border-r-2 border-t-2 border-blue-400/60" />
-            <div className="absolute bottom-3 left-3 h-4 w-4 border-b-2 border-l-2 border-blue-400/60" />
-            <div className="absolute bottom-3 right-3 h-4 w-4 border-b-2 border-r-2 border-blue-400/60" />
-          </motion.div>
-        )}
+            <BodyDiagram zoom={zoom} accent={accent} />
+
+            <AnimatePresence mode="wait">
+              {zoom === "INT" && <BrainOverlay key="int" accent={accent} />}
+              {zoom === "PER" && <EyeOverlay key="per" accent={accent} />}
+              {zoom === "STR" && <MuscleOverlay key="str" accent={accent} />}
+              {zoom === "VIT" && <HeartOverlay key="vit" accent={accent} />}
+              {zoom === "AGI" && <LegsOverlay key="agi" accent={accent} />}
+              {zoom === "full" && <IdleOverlay key="idle" accent={accent} />}
+            </AnimatePresence>
+          </motion.svg>
+
+          {/* Reticle when zoomed */}
+          {zoom !== "full" && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="pointer-events-none absolute inset-0"
+            >
+              <Reticle pos="tl" accent={accent} />
+              <Reticle pos="tr" accent={accent} />
+              <Reticle pos="bl" accent={accent} />
+              <Reticle pos="br" accent={accent} />
+            </motion.div>
+          )}
+
+          {/* Bottom data bar */}
+          <div className="absolute inset-x-2 bottom-2 flex items-center justify-between rounded-lg border border-white/10 bg-slate-950/70 px-2.5 py-1.5 backdrop-blur-sm">
+            <span className="font-mono text-[10px] tracking-[0.25em] uppercase text-slate-400">
+              SUBJ · HUNTER
+            </span>
+            <motion.span
+              key={zoom}
+              initial={{ opacity: 0, y: 4 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="font-mono text-[10px] tracking-[0.25em] uppercase"
+              style={{ color: accent }}
+            >
+              {LABEL[zoom]}
+            </motion.span>
+          </div>
+        </div>
+
+        {/* Bottom readout strip */}
+        <div className="mt-3 flex items-center justify-between text-[9px] font-mono tracking-[0.3em] uppercase">
+          <span className="text-slate-500">SIGNAL</span>
+          <SignalBars accent={accent} />
+          <span className="text-slate-500">LOCK</span>
+          <span style={{ color: accent }}>{zoom === "full" ? "WIDE" : "FOCUS"}</span>
+        </div>
       </div>
     </div>
   );
 }
 
-function zoneLabel(z: ZoomTarget): string {
-  return {
-    full: "FULL",
-    STR: "Chest",
-    VIT: "Heart",
-    AGI: "Legs",
-    INT: "Brain",
-    PER: "Eyes",
-  }[z];
+/* ============================================================
+ * Console chrome — brackets, reticles, signal bars
+ * ============================================================ */
+
+function Bracket({ pos }: { pos: "tl" | "tr" | "bl" | "br" }) {
+  const pmap = {
+    tl: "left-2 top-2 border-l-2 border-t-2",
+    tr: "right-2 top-2 border-r-2 border-t-2",
+    bl: "left-2 bottom-2 border-l-2 border-b-2",
+    br: "right-2 bottom-2 border-r-2 border-b-2",
+  };
+  return <div className={`pointer-events-none absolute ${pmap[pos]} h-3 w-3 border-white/15 rounded-[2px]`} />;
 }
 
-function zoneTint(z: ZoomTarget): string {
-  return {
-    full: "text-blue-300",
-    STR: "text-rose-300",
-    VIT: "text-emerald-300",
-    AGI: "text-amber-300",
-    INT: "text-blue-300",
-    PER: "text-purple-300",
-  }[z];
+function Reticle({ pos, accent }: { pos: "tl" | "tr" | "bl" | "br"; accent: string }) {
+  const pmap = {
+    tl: "left-3 top-3 border-l-2 border-t-2",
+    tr: "right-3 top-3 border-r-2 border-t-2",
+    bl: "left-3 bottom-3 border-l-2 border-b-2",
+    br: "right-3 bottom-3 border-r-2 border-b-2",
+  };
+  return <div className={`absolute ${pmap[pos]} h-4 w-4`} style={{ borderColor: accent }} />;
+}
+
+function SignalBars({ accent }: { accent: string }) {
+  return (
+    <div className="flex items-end gap-0.5">
+      {[2, 4, 6, 8, 10].map((h, i) => (
+        <motion.span
+          key={i}
+          className="block w-0.5 rounded-sm"
+          style={{ height: h, backgroundColor: accent }}
+          animate={{ opacity: [0.4, 1, 0.4] }}
+          transition={{ duration: 1.4, delay: i * 0.12, repeat: Infinity }}
+        />
+      ))}
+    </div>
+  );
 }
 
 /* ============================================================
- * Idle: subtle pulse ring at chest core
+ * Body diagram — clean iconographic anatomy
+ *   The figure is built from arcs + lines, frontal pose, ~Vitruvian
+ *   proportions but stylized for icon clarity. Total canvas 200x400.
  * ============================================================ */
-function PulseRing() {
+
+function BodyDiagram({ zoom, accent }: { zoom: ZoomTarget; accent: string }) {
+  const dim = zoom === "full" ? 1 : 0.35;
+  return (
+    <g opacity={dim < 1 ? dim : 1}>
+      <defs>
+        <linearGradient id="bodyStroke" x1="0%" y1="0%" x2="0%" y2="100%">
+          <stop offset="0%" stopColor="#94a3b8" stopOpacity="0.9" />
+          <stop offset="100%" stopColor="#475569" stopOpacity="0.6" />
+        </linearGradient>
+      </defs>
+
+      {/* Background body silhouette — soft ghost shape */}
+      <path
+        d="M 100 18
+           C 86 18, 80 30, 80 42
+           C 80 50, 84 56, 90 60
+           L 90 70
+           L 70 78
+           C 60 84, 58 100, 60 116
+           L 64 156
+           C 64 162, 66 168, 70 172
+           L 80 180
+           L 82 220
+           L 78 290
+           L 82 360
+           L 90 388
+           L 100 388
+           L 110 388
+           L 118 360
+           L 122 290
+           L 118 220
+           L 120 180
+           L 130 172
+           C 134 168, 136 162, 136 156
+           L 140 116
+           C 142 100, 140 84, 130 78
+           L 110 70
+           L 110 60
+           C 116 56, 120 50, 120 42
+           C 120 30, 114 18, 100 18 Z"
+        fill="#0b1220"
+        opacity="0.7"
+      />
+
+      {/* Anatomical wireframe */}
+      <g fill="none" stroke="url(#bodyStroke)" strokeWidth="0.6" strokeLinecap="round" strokeLinejoin="round">
+        {/* Head */}
+        <ellipse cx="100" cy="40" rx="18" ry="22" />
+        {/* Neck */}
+        <line x1="92" y1="62" x2="92" y2="72" />
+        <line x1="108" y1="62" x2="108" y2="72" />
+        {/* Shoulders */}
+        <path d="M 70 78 Q 100 70, 130 78" />
+        {/* Sternum line */}
+        <line x1="100" y1="80" x2="100" y2="170" strokeDasharray="2 2" opacity="0.5" />
+        {/* Pectoral arches */}
+        <path d="M 78 90 Q 90 110, 100 110 Q 110 110, 122 90" />
+        {/* Abdominal segments */}
+        <line x1="86" y1="120" x2="114" y2="120" strokeDasharray="1 2" opacity="0.4" />
+        <line x1="86" y1="135" x2="114" y2="135" strokeDasharray="1 2" opacity="0.4" />
+        <line x1="86" y1="150" x2="114" y2="150" strokeDasharray="1 2" opacity="0.4" />
+        {/* Waist */}
+        <path d="M 78 168 Q 100 175, 122 168" />
+        {/* Hips */}
+        <path d="M 76 188 Q 100 200, 124 188" />
+        {/* Arms (held at sides, slight outward) */}
+        <path d="M 70 80 Q 56 130, 60 170 Q 62 178, 64 178" />
+        <path d="M 130 80 Q 144 130, 140 170 Q 138 178, 136 178" />
+        {/* Pelvis pubic V */}
+        <path d="M 88 200 L 100 218 L 112 200" />
+        {/* Left leg outline */}
+        <path d="M 84 210 Q 78 260, 80 310 Q 82 350, 86 384" />
+        <path d="M 100 218 Q 96 260, 96 310 Q 96 350, 96 388" />
+        {/* Right leg outline */}
+        <path d="M 116 210 Q 122 260, 120 310 Q 118 350, 114 384" />
+        <path d="M 100 218 Q 104 260, 104 310 Q 104 350, 104 388" strokeDasharray="0" />
+        {/* Knee dots */}
+        <circle cx="88" cy="280" r="1.5" fill="url(#bodyStroke)" />
+        <circle cx="112" cy="280" r="1.5" fill="url(#bodyStroke)" />
+      </g>
+
+      {/* Anatomical landmark dots */}
+      <g fill={accent} opacity="0.7">
+        <circle cx="100" cy="40" r="0.8" />
+        <circle cx="100" cy="100" r="0.8" />
+        <circle cx="100" cy="130" r="0.8" />
+        <circle cx="100" cy="180" r="0.8" />
+        <circle cx="88" cy="280" r="0.8" />
+        <circle cx="112" cy="280" r="0.8" />
+      </g>
+
+      {/* Center energy node */}
+      <g>
+        <circle cx="100" cy="130" r="3.5" fill={accent} opacity="0.4" />
+        <circle cx="100" cy="130" r="1.5" fill={accent} />
+      </g>
+    </g>
+  );
+}
+
+/* ============================================================
+ * Idle: data orbits around chest core
+ * ============================================================ */
+function IdleOverlay({ accent }: { accent: string }) {
   return (
     <motion.g initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-      {[0, 1, 2].map((i) => (
+      {[14, 22, 32].map((r, i) => (
         <circle
           key={i}
           cx="100"
           cy="130"
-          r="6"
+          r={r}
           fill="none"
-          stroke="#3b82f6"
-          strokeWidth="0.6"
-          opacity="0.6"
+          stroke={accent}
+          strokeWidth="0.4"
+          opacity={0.3 - i * 0.06}
         >
           <animate
             attributeName="r"
-            values="6;26;6"
-            dur="3.6s"
-            begin={`${i * 1.2}s`}
+            values={`${r};${r + 6};${r}`}
+            dur={`${4 + i * 0.6}s`}
             repeatCount="indefinite"
           />
           <animate
             attributeName="opacity"
-            values="0.6;0;0.6"
-            dur="3.6s"
-            begin={`${i * 1.2}s`}
+            values={`${0.5 - i * 0.06};0;${0.5 - i * 0.06}`}
+            dur={`${4 + i * 0.6}s`}
             repeatCount="indefinite"
           />
         </circle>
       ))}
+      {/* Orbiting dot */}
+      <g style={{ transformOrigin: "100px 130px" }}>
+        <animateTransform
+          attributeName="transform"
+          type="rotate"
+          from="0 100 130"
+          to="360 100 130"
+          dur="10s"
+          repeatCount="indefinite"
+        />
+        <circle cx="130" cy="130" r="1.4" fill={accent} />
+      </g>
     </motion.g>
   );
 }
 
 /* ============================================================
- * INT — Brain with synapse network firing
+ * INT — Brain
  * ============================================================ */
-function BrainOverlay() {
-  // Synapse nodes inside the head region (centered around 100,40)
+function BrainOverlay({ accent }: { accent: string }) {
   const nodes: [number, number][] = [
-    [88, 26], [100, 22], [112, 26],
-    [82, 38], [94, 38], [106, 38], [118, 38],
-    [86, 50], [100, 52], [114, 50],
-    [92, 60], [108, 60],
+    [92, 28], [100, 24], [108, 28],
+    [86, 36], [96, 38], [104, 38], [114, 36],
+    [88, 46], [100, 50], [112, 46],
+    [94, 56], [106, 56],
   ];
   const edges: [number, number][] = [
     [0, 1], [1, 2], [0, 3], [1, 4], [2, 6], [3, 4], [4, 5], [5, 6],
     [3, 7], [4, 8], [5, 8], [6, 9], [7, 10], [8, 10], [8, 11], [9, 11],
   ];
-
   return (
-    <motion.g
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      transition={{ duration: 0.4 }}
-    >
+    <motion.g initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.4 }}>
       {/* Brain outline */}
       <path
-        d="M 78 28
-           C 78 18, 92 12, 100 18
-           C 108 12, 122 18, 122 28
-           C 128 30, 128 42, 122 46
-           C 124 56, 116 64, 108 62
-           C 104 66, 96 66, 92 62
-           C 84 64, 76 56, 78 46
-           C 72 42, 72 30, 78 28 Z"
+        d="M 82 30 C 82 22, 92 18, 100 22 C 108 18, 118 22, 118 30 C 122 32, 122 42, 118 46 C 120 54, 114 60, 108 58 C 104 62, 96 62, 92 58 C 86 60, 80 54, 82 46 C 78 42, 78 32, 82 30 Z"
         fill="none"
-        stroke="#60a5fa"
-        strokeWidth="0.6"
-        opacity="0.7"
-        filter="url(#glow)"
-      />
-      {/* Hemispheric divide */}
-      <path
-        d="M 100 18 Q 96 36, 100 62"
-        stroke="#3b82f6"
+        stroke={accent}
         strokeWidth="0.5"
-        fill="none"
-        opacity="0.6"
+        opacity="0.8"
       />
-      {/* Synapse edges */}
+      <path d="M 100 22 Q 96 38, 100 58" stroke={accent} strokeWidth="0.4" fill="none" opacity="0.5" />
       {edges.map(([a, b], i) => {
         const A = nodes[a]!;
         const B = nodes[b]!;
         return (
-          <line
-            key={i}
-            x1={A[0]}
-            y1={A[1]}
-            x2={B[0]}
-            y2={B[1]}
-            stroke="#60a5fa"
-            strokeWidth="0.5"
-            opacity="0.4"
-          >
-            <animate
-              attributeName="opacity"
-              values="0.2;0.9;0.2"
-              dur={`${1.2 + (i % 4) * 0.3}s`}
-              begin={`${(i % 5) * 0.18}s`}
-              repeatCount="indefinite"
-            />
+          <line key={i} x1={A[0]} y1={A[1]} x2={B[0]} y2={B[1]} stroke={accent} strokeWidth="0.4" opacity="0.5">
+            <animate attributeName="opacity" values="0.2;0.9;0.2" dur={`${1.2 + (i % 4) * 0.3}s`} begin={`${(i % 5) * 0.15}s`} repeatCount="indefinite" />
           </line>
         );
       })}
-      {/* Synapse nodes pulsing */}
       {nodes.map(([x, y], i) => (
-        <circle
-          key={i}
-          cx={x}
-          cy={y}
-          r="1.2"
-          fill="#dbeafe"
-          filter="url(#glow)"
-        >
-          <animate
-            attributeName="r"
-            values="1.2;2.2;1.2"
-            dur={`${1.4 + (i % 3) * 0.3}s`}
-            begin={`${(i % 6) * 0.15}s`}
-            repeatCount="indefinite"
-          />
+        <circle key={i} cx={x} cy={y} r="1" fill={accent}>
+          <animate attributeName="r" values="1;1.8;1" dur={`${1.4 + (i % 3) * 0.3}s`} begin={`${(i % 6) * 0.15}s`} repeatCount="indefinite" />
         </circle>
       ))}
-      {/* Spark traveling along an edge */}
-      <circle r="1.4" fill="#fff" filter="url(#glow)">
-        <animateMotion
-          path="M 88 26 L 94 38 L 100 52 L 108 60 L 114 50 L 106 38 L 100 22 L 88 26"
-          dur="3.2s"
-          repeatCount="indefinite"
-        />
+      <circle r="1.2" fill="#fff">
+        <animateMotion path="M 92 28 L 96 38 L 100 50 L 106 56 L 112 46 L 104 38 L 100 24 L 92 28" dur="3.2s" repeatCount="indefinite" />
       </circle>
     </motion.g>
   );
 }
 
 /* ============================================================
- * PER — Eye with iris radar
+ * PER — Eyes
  * ============================================================ */
-function EyeOverlay() {
+function EyeOverlay({ accent }: { accent: string }) {
   return (
-    <motion.g
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      transition={{ duration: 0.4 }}
-    >
-      {/* Eye almond shape (right eye position roughly 92, 44; left 108, 44) */}
+    <motion.g initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.4 }}>
       {[92, 108].map((cx, idx) => (
         <g key={cx}>
-          {/* Sclera */}
-          <ellipse cx={cx} cy="44" rx="6" ry="3.5" fill="#0f172a" stroke="#c084fc" strokeWidth="0.4" />
-          {/* Iris ring */}
-          <circle
-            cx={cx}
-            cy="44"
-            r="2.6"
-            fill="#1e1b4b"
-            stroke="#a855f7"
-            strokeWidth="0.4"
-          >
-            <animate
-              attributeName="r"
-              values="2.6;3.2;2.6"
-              dur="3s"
-              begin={`${idx * 0.4}s`}
-              repeatCount="indefinite"
-            />
+          <ellipse cx={cx} cy="40" rx="5" ry="3" fill="#020617" stroke={accent} strokeWidth="0.4" />
+          <circle cx={cx} cy="40" r="2.2" fill="#1e1b4b" stroke={accent} strokeWidth="0.35">
+            <animate attributeName="r" values="2.2;2.6;2.2" dur="3s" begin={`${idx * 0.4}s`} repeatCount="indefinite" />
           </circle>
-          {/* Pupil */}
-          <circle cx={cx} cy="44" r="1.2" fill="#020617">
-            <animate
-              attributeName="r"
-              values="1.2;0.7;1.2"
-              dur="3s"
-              begin={`${idx * 0.4}s`}
-              repeatCount="indefinite"
-            />
+          <circle cx={cx} cy="40" r="1" fill="#020617">
+            <animate attributeName="r" values="1;0.6;1" dur="3s" begin={`${idx * 0.4}s`} repeatCount="indefinite" />
           </circle>
-          {/* Highlight */}
-          <circle cx={cx - 0.6} cy="43.4" r="0.4" fill="#fff" opacity="0.8" />
+          <circle cx={cx - 0.5} cy="39.5" r="0.3" fill="#fff" opacity="0.8" />
         </g>
       ))}
-      {/* Crosshair scan lines */}
-      <g stroke="#c084fc" strokeWidth="0.3" opacity="0.4">
-        <line x1="74" y1="44" x2="126" y2="44" />
-        <line x1="100" y1="34" x2="100" y2="54" />
-      </g>
-      {/* Sweeping arc */}
-      <g style={{ transformOrigin: "100px 44px" }}>
-        <line x1="100" y1="44" x2="116" y2="44" stroke="#d8b4fe" strokeWidth="0.4" opacity="0.6">
-          <animateTransform
-            attributeName="transform"
-            type="rotate"
-            from="0 100 44"
-            to="360 100 44"
-            dur="3.2s"
-            repeatCount="indefinite"
-          />
-        </line>
+      <g stroke={accent} strokeWidth="0.25" opacity="0.4">
+        <line x1="78" y1="40" x2="122" y2="40" />
+        <line x1="100" y1="32" x2="100" y2="48" />
       </g>
     </motion.g>
   );
 }
 
 /* ============================================================
- * STR — Bicep muscle fibers flexing
+ * STR — Muscles
  * ============================================================ */
-function MuscleOverlay() {
+function MuscleOverlay({ accent }: { accent: string }) {
   return (
-    <motion.g
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      transition={{ duration: 0.4 }}
-    >
-      {/* Left bicep cluster */}
-      <g transform="translate(48, 122)">
-        <ellipse cx="0" cy="14" rx="14" ry="20" fill="#7f1d1d" opacity="0.35" stroke="#fb7185" strokeWidth="0.5">
-          <animate
-            attributeName="ry"
-            values="20;23;20"
-            dur="1.4s"
-            repeatCount="indefinite"
-          />
-        </ellipse>
-        {/* Fibers */}
-        {[-8, -4, 0, 4, 8].map((dx, i) => (
-          <line
-            key={i}
-            x1={dx}
-            y1="-4"
-            x2={dx}
-            y2="32"
-            stroke="#fda4af"
-            strokeWidth="0.6"
-            opacity="0.7"
-          >
-            <animate
-              attributeName="opacity"
-              values="0.4;0.9;0.4"
-              dur="1.4s"
-              begin={`${i * 0.08}s`}
-              repeatCount="indefinite"
-            />
-          </line>
-        ))}
-      </g>
-      {/* Right bicep cluster */}
-      <g transform="translate(152, 122)">
-        <ellipse cx="0" cy="14" rx="14" ry="20" fill="#7f1d1d" opacity="0.35" stroke="#fb7185" strokeWidth="0.5">
-          <animate
-            attributeName="ry"
-            values="20;23;20"
-            dur="1.4s"
-            repeatCount="indefinite"
-          />
-        </ellipse>
-        {[-8, -4, 0, 4, 8].map((dx, i) => (
-          <line
-            key={i}
-            x1={dx}
-            y1="-4"
-            x2={dx}
-            y2="32"
-            stroke="#fda4af"
-            strokeWidth="0.6"
-            opacity="0.7"
-          >
-            <animate
-              attributeName="opacity"
-              values="0.4;0.9;0.4"
-              dur="1.4s"
-              begin={`${i * 0.08 + 0.2}s`}
-              repeatCount="indefinite"
-            />
-          </line>
-        ))}
-      </g>
-      {/* Chest pec lines */}
-      <g stroke="#fb7185" strokeWidth="0.5" fill="none" opacity="0.6" filter="url(#glow)">
-        <path d="M 70 100 Q 80 110, 96 110 L 96 130">
-          <animate attributeName="opacity" values="0.4;0.9;0.4" dur="1.4s" repeatCount="indefinite" />
+    <motion.g initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.4 }}>
+      {/* Pec lines glowing */}
+      <g stroke={accent} strokeWidth="0.6" fill="none">
+        <path d="M 78 90 Q 90 110, 100 110">
+          <animate attributeName="opacity" values="0.4;1;0.4" dur="1.4s" repeatCount="indefinite" />
         </path>
-        <path d="M 130 100 Q 120 110, 104 110 L 104 130">
-          <animate attributeName="opacity" values="0.4;0.9;0.4" dur="1.4s" begin="0.2s" repeatCount="indefinite" />
+        <path d="M 122 90 Q 110 110, 100 110">
+          <animate attributeName="opacity" values="0.4;1;0.4" dur="1.4s" begin="0.2s" repeatCount="indefinite" />
         </path>
       </g>
-      {/* Impact starburst */}
-      <g stroke="#fda4af" strokeWidth="0.6" opacity="0.5">
+      {/* Bicep arcs */}
+      <g stroke={accent} strokeWidth="0.5" fill="none">
+        <path d="M 56 110 Q 50 130, 56 150">
+          <animate attributeName="d" values="M 56 110 Q 50 130, 56 150;M 58 110 Q 48 130, 58 150;M 56 110 Q 50 130, 56 150" dur="1.4s" repeatCount="indefinite" />
+        </path>
+        <path d="M 144 110 Q 150 130, 144 150">
+          <animate attributeName="d" values="M 144 110 Q 150 130, 144 150;M 142 110 Q 152 130, 142 150;M 144 110 Q 150 130, 144 150" dur="1.4s" repeatCount="indefinite" />
+        </path>
+      </g>
+      {/* Center burst */}
+      <g stroke={accent} strokeWidth="0.4" opacity="0.6">
         {Array.from({ length: 8 }).map((_, i) => {
-          const angle = (i * 45 * Math.PI) / 180;
-          const x1 = 100 + Math.cos(angle) * 18;
-          const y1 = 130 + Math.sin(angle) * 18;
-          const x2 = 100 + Math.cos(angle) * 32;
-          const y2 = 130 + Math.sin(angle) * 32;
+          const a = (i * 45 * Math.PI) / 180;
+          const x1 = 100 + Math.cos(a) * 14;
+          const y1 = 130 + Math.sin(a) * 14;
+          const x2 = 100 + Math.cos(a) * 24;
+          const y2 = 130 + Math.sin(a) * 24;
           return (
             <line key={i} x1={x1} y1={y1} x2={x2} y2={y2}>
-              <animate
-                attributeName="opacity"
-                values="0.2;0.9;0.2"
-                dur="1.4s"
-                begin={`${i * 0.05}s`}
-                repeatCount="indefinite"
-              />
+              <animate attributeName="opacity" values="0.2;0.9;0.2" dur="1.4s" begin={`${i * 0.05}s`} repeatCount="indefinite" />
             </line>
           );
         })}
       </g>
+      {/* Central pulse */}
+      <circle cx="100" cy="130" r="4" fill={accent} opacity="0.6">
+        <animate attributeName="r" values="4;7;4" dur="1.4s" repeatCount="indefinite" />
+      </circle>
     </motion.g>
   );
 }
 
 /* ============================================================
- * VIT — Heart with vessels
+ * VIT — Heart
  * ============================================================ */
-function HeartOverlay() {
+function HeartOverlay({ accent }: { accent: string }) {
   return (
-    <motion.g
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      transition={{ duration: 0.4 }}
-    >
+    <motion.g initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.4 }}>
       <g style={{ transformOrigin: "100px 130px" }}>
-        <g>
-          {/* Anatomical heart */}
-          <path
-            d="M 100 152
-               C 88 144, 76 134, 76 122
-               C 76 114, 84 110, 90 114
-               C 94 116, 97 120, 100 124
-               C 103 120, 106 116, 110 114
-               C 116 110, 124 114, 124 122
-               C 124 134, 112 144, 100 152 Z"
-            fill="#7f1d1d"
-            stroke="#34d399"
-            strokeWidth="0.6"
-            opacity="0.85"
-            filter="url(#glow)"
-          >
-            <animateTransform
-              attributeName="transform"
-              type="scale"
-              additive="sum"
-              values="1;1.12;1"
-              dur="0.9s"
-              repeatCount="indefinite"
-            />
-          </path>
-        </g>
-        {/* Vessels traveling outward */}
-        <g stroke="#34d399" strokeWidth="0.5" fill="none">
-          <path d="M 92 116 Q 84 108, 78 102" opacity="0.7">
-            <animate attributeName="stroke-dasharray" values="0 30;30 0" dur="1.8s" repeatCount="indefinite" />
-          </path>
-          <path d="M 108 116 Q 116 108, 122 102" opacity="0.7">
-            <animate attributeName="stroke-dasharray" values="0 30;30 0" dur="1.8s" repeatCount="indefinite" />
-          </path>
-        </g>
-        {/* Blood pulse traveling */}
-        <circle r="1.6" fill="#fca5a5" filter="url(#glow)">
-          <animateMotion
-            path="M 100 152 L 100 140 L 96 132 L 100 124 L 104 132 L 100 140 L 100 152"
-            dur="0.9s"
-            repeatCount="indefinite"
-          />
-        </circle>
-        {/* Halo ring */}
-        <circle cx="100" cy="130" r="22" fill="none" stroke="#10b981" strokeWidth="0.4" opacity="0.3">
-          <animate attributeName="r" values="18;28;18" dur="1.8s" repeatCount="indefinite" />
-          <animate attributeName="opacity" values="0.4;0;0.4" dur="1.8s" repeatCount="indefinite" />
-        </circle>
+        <path
+          d="M 100 148 C 90 142, 80 134, 80 124 C 80 118, 86 114, 91 118 C 94 120, 97 123, 100 127 C 103 123, 106 120, 109 118 C 114 114, 120 118, 120 124 C 120 134, 110 142, 100 148 Z"
+          fill={accent}
+          opacity="0.7"
+          stroke={accent}
+          strokeWidth="0.4"
+        >
+          <animateTransform attributeName="transform" type="scale" additive="sum" values="1;1.12;1" dur="0.9s" repeatCount="indefinite" />
+        </path>
       </g>
+      {/* Vessels */}
+      <g stroke={accent} strokeWidth="0.4" fill="none" opacity="0.6">
+        <path d="M 91 118 Q 84 110, 78 104">
+          <animate attributeName="stroke-dasharray" values="0 30;30 0" dur="1.8s" repeatCount="indefinite" />
+        </path>
+        <path d="M 109 118 Q 116 110, 122 104">
+          <animate attributeName="stroke-dasharray" values="0 30;30 0" dur="1.8s" repeatCount="indefinite" />
+        </path>
+      </g>
+      <circle r="1.4" fill="#fca5a5">
+        <animateMotion path="M 100 148 L 100 138 L 96 130 L 100 124 L 104 130 L 100 138 L 100 148" dur="0.9s" repeatCount="indefinite" />
+      </circle>
     </motion.g>
   );
 }
 
 /* ============================================================
- * AGI — Legs with kinetic motion lines
+ * AGI — Legs
  * ============================================================ */
-function LegsOverlay() {
+function LegsOverlay({ accent }: { accent: string }) {
   return (
-    <motion.g
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      transition={{ duration: 0.4 }}
-    >
-      {/* Left leg with stride animation */}
-      <g style={{ transformOrigin: "85px 240px" }}>
-        <motion.g
-          animate={{ rotate: [0, 6, 0, -6, 0] }}
-          transition={{ duration: 0.7, repeat: Infinity, ease: "easeInOut" }}
-        >
-          {/* Quad */}
-          <path
-            d="M 78 230 Q 76 270, 80 310 L 92 310 Q 94 270, 88 230 Z"
-            fill="none"
-            stroke="#fbbf24"
-            strokeWidth="0.6"
-            opacity="0.7"
-          />
-          {/* Knee joint */}
-          <circle cx="84" cy="290" r="2" fill="#fde68a" opacity="0.9" />
-          {/* Shin */}
-          <path
-            d="M 82 290 Q 80 320, 80 350 L 92 350 Q 90 320, 86 290 Z"
-            fill="none"
-            stroke="#fcd34d"
-            strokeWidth="0.5"
-            opacity="0.6"
-          />
-        </motion.g>
+    <motion.g initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.4 }}>
+      {/* Quad highlights */}
+      <g stroke={accent} strokeWidth="0.5" fill="none">
+        <path d="M 84 230 Q 80 260, 88 280" opacity="0.8">
+          <animate attributeName="opacity" values="0.4;1;0.4" dur="0.6s" repeatCount="indefinite" />
+        </path>
+        <path d="M 116 230 Q 120 260, 112 280" opacity="0.8">
+          <animate attributeName="opacity" values="0.4;1;0.4" dur="0.6s" begin="0.3s" repeatCount="indefinite" />
+        </path>
+        {/* Shin highlights */}
+        <path d="M 86 290 Q 84 330, 88 360" opacity="0.7">
+          <animate attributeName="opacity" values="0.4;1;0.4" dur="0.6s" begin="0.15s" repeatCount="indefinite" />
+        </path>
+        <path d="M 114 290 Q 116 330, 112 360" opacity="0.7">
+          <animate attributeName="opacity" values="0.4;1;0.4" dur="0.6s" begin="0.45s" repeatCount="indefinite" />
+        </path>
       </g>
-      {/* Right leg with stride animation (opposite phase) */}
-      <g style={{ transformOrigin: "115px 240px" }}>
-        <motion.g
-          animate={{ rotate: [0, -6, 0, 6, 0] }}
-          transition={{ duration: 0.7, repeat: Infinity, ease: "easeInOut" }}
-        >
-          <path
-            d="M 112 230 Q 114 270, 120 310 L 108 310 Q 106 270, 102 230 Z"
-            fill="none"
-            stroke="#fbbf24"
-            strokeWidth="0.6"
-            opacity="0.7"
-          />
-          <circle cx="116" cy="290" r="2" fill="#fde68a" opacity="0.9" />
-          <path
-            d="M 118 290 Q 120 320, 120 350 L 108 350 Q 110 320, 114 290 Z"
-            fill="none"
-            stroke="#fcd34d"
-            strokeWidth="0.5"
-            opacity="0.6"
-          />
-        </motion.g>
-      </g>
-      {/* Kinetic motion lines */}
-      <g stroke="#fbbf24" strokeLinecap="round" strokeWidth="0.8" opacity="0.65">
-        {[
-          [60, 250, 72, 250],
-          [56, 270, 70, 270],
-          [60, 290, 72, 290],
-          [140, 250, 128, 250],
-          [144, 270, 130, 270],
-          [140, 290, 128, 290],
-        ].map(([x1, y1, x2, y2], i) => (
+      {/* Joints */}
+      <circle cx="88" cy="280" r="2" fill={accent}>
+        <animate attributeName="r" values="2;3;2" dur="0.6s" repeatCount="indefinite" />
+      </circle>
+      <circle cx="112" cy="280" r="2" fill={accent}>
+        <animate attributeName="r" values="2;3;2" dur="0.6s" begin="0.3s" repeatCount="indefinite" />
+      </circle>
+      {/* Speed lines */}
+      <g stroke={accent} strokeLinecap="round" strokeWidth="0.6" opacity="0.6">
+        {[[58, 250, 70, 250], [54, 270, 68, 270], [58, 290, 70, 290], [60, 320, 72, 320], [142, 250, 130, 250], [146, 270, 132, 270], [142, 290, 130, 290], [140, 320, 128, 320]].map(([x1, y1, x2, y2], i) => (
           <line key={i} x1={x1} y1={y1} x2={x2} y2={y2}>
-            <animate
-              attributeName="opacity"
-              values="0.2;0.9;0.2"
-              dur="0.7s"
-              begin={`${i * 0.08}s`}
-              repeatCount="indefinite"
-            />
+            <animate attributeName="opacity" values="0.2;0.9;0.2" dur="0.7s" begin={`${i * 0.06}s`} repeatCount="indefinite" />
           </line>
         ))}
       </g>
-      {/* Ground impact ripples */}
-      <g fill="none" stroke="#fcd34d" strokeWidth="0.5">
-        <ellipse cx="86" cy="358" rx="4" ry="1.2" opacity="0.6">
-          <animate attributeName="rx" values="4;16;4" dur="0.7s" repeatCount="indefinite" />
-          <animate attributeName="opacity" values="0.7;0;0.7" dur="0.7s" repeatCount="indefinite" />
+      {/* Ground impact */}
+      <g fill="none" stroke={accent} strokeWidth="0.4">
+        <ellipse cx="90" cy="372" rx="6" ry="1">
+          <animate attributeName="rx" values="6;18;6" dur="0.7s" repeatCount="indefinite" />
+          <animate attributeName="opacity" values="0.8;0;0.8" dur="0.7s" repeatCount="indefinite" />
         </ellipse>
-        <ellipse cx="114" cy="358" rx="4" ry="1.2" opacity="0.6">
-          <animate attributeName="rx" values="4;16;4" dur="0.7s" begin="0.35s" repeatCount="indefinite" />
-          <animate attributeName="opacity" values="0.7;0;0.7" dur="0.7s" begin="0.35s" repeatCount="indefinite" />
+        <ellipse cx="110" cy="372" rx="6" ry="1">
+          <animate attributeName="rx" values="6;18;6" dur="0.7s" begin="0.35s" repeatCount="indefinite" />
+          <animate attributeName="opacity" values="0.8;0;0.8" dur="0.7s" begin="0.35s" repeatCount="indefinite" />
         </ellipse>
       </g>
     </motion.g>
