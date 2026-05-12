@@ -25,6 +25,7 @@ const HeroScene = dynamic(
   () => import("@/components/scene/hero-scene").then((m) => m.HeroScene),
   { ssr: false, loading: () => null },
 );
+import { AnatomyFigure } from "@/components/anatomy-figure";
 
 /* -------- Types & seed -------- */
 
@@ -253,7 +254,7 @@ export default function Dashboard() {
       <StudioCursor />
       <div aria-hidden className="grain" />
 
-      {/* === Live 3D background (full-bleed) === */}
+      {/* === Live 3D atmospheric background === */}
       <HeroScene
         mode={sceneMode}
         hoveredStat={hoveredStat}
@@ -264,6 +265,9 @@ export default function Dashboard() {
         xpRatio={player.xpInLevel / player.xpToNext}
         streak={player.streak}
       />
+
+      {/* === SVG anatomy figure (the actual person) — sits above the 3D bg === */}
+      <AnatomyFigure focus={sceneMode} />
 
       {/* === Fixed top bar === */}
       <header className="fixed top-0 inset-x-0 z-30 px-6 py-5 flex items-center justify-between">
