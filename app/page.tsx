@@ -1,37 +1,29 @@
 "use client";
 
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
-import {
-  motion,
-  AnimatePresence,
-  useReducedMotion,
-  useScroll,
-  useTransform,
-  useSpring,
-} from "motion/react";
+import { motion, AnimatePresence, useReducedMotion } from "motion/react";
 import {
   Check,
   Play,
   Pause,
   Minus,
   Plus,
-  Lock,
   Sparkles,
   Flame,
-  ArrowDown,
-  Zap,
-  AlertTriangle,
   RotateCcw,
+  TrendingUp,
+  Trophy,
+  Calendar,
+  ChevronRight,
 } from "lucide-react";
+import confetti from "canvas-confetti";
 import { cn } from "@/lib/utils";
 import type { StatKind } from "@/lib/types";
-import { HunterFigure, type ZoomTarget } from "@/components/animations/hunter-figure";
 import { StudioCursor } from "@/components/cursor";
-import { Marquee } from "@/components/marquee";
+import { ActivityRings, CountUp } from "@/components/animations/activity-rings";
+import { TiltCard } from "@/components/tilt-card";
 
-/* ----------------------------------------------------------
- * Types & seed data — replaced by Supabase in Phase 2
- * ---------------------------------------------------------- */
+/* -------- Types & seed (replaced by Supabase in Phase 2) -------- */
 
 type Stat = StatKind;
 
@@ -52,13 +44,13 @@ type Quest = {
 
 const STAT_META: Record<
   Stat,
-  { label: string; bodyPart: string; tag: string; text: string; chip: string; bar: string; ring: string }
+  { label: string; emoji: string; tint: string; bar: string; ring: string }
 > = {
-  STR: { label: "Strength", bodyPart: "Chest", tag: "Iron", text: "text-rose-300", chip: "bg-rose-500/15 text-rose-300 border-rose-500/30", bar: "from-rose-400 to-rose-600", ring: "ring-rose-500/40" },
-  VIT: { label: "Vitality", bodyPart: "Heart", tag: "Pulse", text: "text-emerald-300", chip: "bg-emerald-500/15 text-emerald-300 border-emerald-500/30", bar: "from-emerald-400 to-emerald-600", ring: "ring-emerald-500/40" },
-  AGI: { label: "Agility", bodyPart: "Legs", tag: "Flow", text: "text-amber-300", chip: "bg-amber-500/15 text-amber-300 border-amber-500/30", bar: "from-amber-400 to-amber-600", ring: "ring-amber-500/40" },
-  INT: { label: "Intellect", bodyPart: "Brain", tag: "Mind", text: "text-blue-300", chip: "bg-blue-500/15 text-blue-300 border-blue-500/30", bar: "from-blue-400 to-blue-600", ring: "ring-blue-500/40" },
-  PER: { label: "Perception", bodyPart: "Eyes", tag: "Sight", text: "text-purple-300", chip: "bg-purple-500/15 text-purple-300 border-purple-500/30", bar: "from-purple-400 to-purple-600", ring: "ring-purple-500/40" },
+  STR: { label: "Strength", emoji: "💪", tint: "text-rose-300", bar: "from-rose-400 to-rose-600", ring: "ring-rose-500/40" },
+  VIT: { label: "Vitality", emoji: "❤️", tint: "text-emerald-300", bar: "from-emerald-400 to-emerald-600", ring: "ring-emerald-500/40" },
+  AGI: { label: "Agility", emoji: "⚡", tint: "text-amber-300", bar: "from-amber-400 to-amber-600", ring: "ring-amber-500/40" },
+  INT: { label: "Intellect", emoji: "🧠", tint: "text-blue-300", bar: "from-blue-400 to-blue-600", ring: "ring-blue-500/40" },
+  PER: { label: "Perception", emoji: "👁", tint: "text-purple-300", bar: "from-purple-400 to-purple-600", ring: "ring-purple-500/40" },
 };
 
 const INITIAL_QUESTS: Quest[] = [
@@ -67,17 +59,19 @@ const INITIAL_QUESTS: Quest[] = [
   { id: "q3", name: "Run", stat: "VIT", baseXp: 75, required: true, control: { kind: "count", actual: 0, target: 5 } },
   { id: "q4", name: "Study", stat: "INT", baseXp: 75, required: true, control: { kind: "timer", elapsedSec: 0, targetMin: 90, running: false } },
   { id: "q5", name: "Read", stat: "INT", baseXp: 25, required: false, control: { kind: "timer", elapsedSec: 0, targetMin: 30, running: false } },
-  { id: "q6", name: "Squats — Penalty +50%", stat: "STR", baseXp: 75, required: true, penalty: true, control: { kind: "count", actual: 0, target: 150 } },
+  { id: "q6", name: "Squats (penalty +50%)", stat: "STR", baseXp: 75, required: true, penalty: true, control: { kind: "count", actual: 0, target: 150 } },
 ];
 
 const INITIAL_PLAYER = {
-  name: "HASSAN",
+  name: "Hassan",
   level: 14,
   title: "Awakened",
   xpInLevel: 420,
   xpToNext: 1000,
   streak: 23,
   stats: { STR: 42, VIT: 38, AGI: 29, INT: 51, PER: 24 } as Record<Stat, number>,
+  // 30-day completion heat (1 = cleared, 0 = missed, 0.4 = partial)
+  heat: [1,1,1,0,1,1,1,1,1,1,0.4,1,1,1,1,1,1,1,0,1,1,1,1,1,1,1,1,1,1,0.4] as number[],
 };
 
 const TITLE_FOR_LEVEL = (lv: number) =>
@@ -90,22 +84,23 @@ function isQuestDone(c: Control): boolean {
   return c.elapsedSec / 60 >= c.targetMin;
 }
 
-/* ----------------------------------------------------------
- * Page
- * ---------------------------------------------------------- */
+const STAT_HEX: Record<Stat, [string, string, string]> = {
+  STR: ["#fb7185", "#e11d48", "rgba(244,63,94,0.5)"],
+  VIT: ["#34d399", "#059669", "rgba(16,185,129,0.5)"],
+  AGI: ["#fbbf24", "#d97706", "rgba(245,158,11,0.5)"],
+  INT: ["#60a5fa", "#1d4ed8", "rgba(59,130,246,0.5)"],
+  PER: ["#c084fc", "#7c3aed", "rgba(168,85,247,0.5)"],
+};
 
-export default function DashboardPreview() {
+/* -------- Page -------- */
+
+export default function Dashboard() {
   const reduce = useReducedMotion();
   const [quests, setQuests] = useState<Quest[]>(INITIAL_QUESTS);
   const [player, setPlayer] = useState(INITIAL_PLAYER);
-  const [xpFloaters, setXpFloaters] = useState<{ id: number; xp: number; x: number; y: number }[]>([]);
-  const [levelUpVisible, setLevelUpVisible] = useState(false);
   const [activeStatFilter, setActiveStatFilter] = useState<Stat | null>(null);
-  const [transientStat, setTransientStat] = useState<Stat | null>(null);
-  const floaterIdRef = useRef(0);
-  const transientTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Live timer tick
+  // Timer tick
   useEffect(() => {
     const id = setInterval(() => {
       setQuests((prev) => {
@@ -116,7 +111,7 @@ export default function DashboardPreview() {
           const newElapsed = q.control.elapsedSec + 1;
           const reached = newElapsed / 60 >= q.control.targetMin;
           if (reached) {
-            fireXpGain(q.baseXp);
+            fireXp(q.baseXp);
             return { ...q, control: { ...q.control, elapsedSec: q.control.targetMin * 60, running: false } };
           }
           return { ...q, control: { ...q.control, elapsedSec: newElapsed } };
@@ -129,77 +124,91 @@ export default function DashboardPreview() {
   }, []);
 
   const requiredQuests = useMemo(() => quests.filter((q) => q.required), [quests]);
-  const remaining = useMemo(() => requiredQuests.filter((q) => !isQuestDone(q.control)).length, [requiredQuests]);
+  const completedRequired = requiredQuests.filter((q) => isQuestDone(q.control)).length;
   const totalRequired = requiredQuests.length;
+  const remaining = totalRequired - completedRequired;
   const cleared = remaining === 0;
-  const runningTimer = quests.find((q) => q.control.kind === "timer" && q.control.running);
 
-  const zoom: ZoomTarget = useMemo(() => {
-    if (runningTimer) return runningTimer.stat;
-    if (activeStatFilter) return activeStatFilter;
-    if (transientStat) return transientStat;
-    return "full";
-  }, [runningTimer, activeStatFilter, transientStat]);
+  const totalXpToday = useMemo(
+    () => quests.filter((q) => isQuestDone(q.control)).reduce((s, q) => s + q.baseXp, 0),
+    [quests],
+  );
+  const xpGoalToday = 300;
+
+  const activeMinutes = useMemo(() => {
+    let m = 0;
+    quests.forEach((q) => {
+      if (q.control.kind === "timer") m += Math.floor(q.control.elapsedSec / 60);
+      if (q.control.kind === "count" && isQuestDone(q.control)) m += 5;
+    });
+    return m;
+  }, [quests]);
 
   const visibleQuests = activeStatFilter ? quests.filter((q) => q.stat === activeStatFilter) : quests;
 
-  const triggerZoom = useCallback((stat: Stat) => {
-    if (transientTimerRef.current) clearTimeout(transientTimerRef.current);
-    setTransientStat(stat);
-    transientTimerRef.current = setTimeout(() => setTransientStat(null), 2000);
-  }, []);
+  function fireConfetti(originX: number, originY: number, colors: string[]) {
+    confetti({
+      particleCount: 60,
+      spread: 65,
+      startVelocity: 36,
+      origin: { x: originX, y: originY },
+      colors,
+      scalar: 0.9,
+      ticks: 130,
+    });
+  }
 
-  function fireXpGain(amount: number) {
+  function fireXp(amount: number) {
     if (amount <= 0) return;
-    const id = ++floaterIdRef.current;
-    setXpFloaters((prev) => [...prev, { id, xp: amount, x: 30 + Math.random() * 40, y: 50 }]);
-    setTimeout(() => setXpFloaters((prev) => prev.filter((f) => f.id !== id)), 1400);
     setPlayer((p) => {
       let level = p.level;
       let xpInLevel = p.xpInLevel + amount;
       let xpToNext = p.xpToNext;
       let title = p.title;
-      let leveled = false;
       while (xpInLevel >= xpToNext) {
         xpInLevel -= xpToNext;
         level += 1;
         xpToNext = XP_TO_NEXT(level);
         title = TITLE_FOR_LEVEL(level);
-        leveled = true;
       }
-      if (leveled) setTimeout(() => setLevelUpVisible(true), 350);
       return { ...p, level, xpInLevel, xpToNext, title };
     });
-    if (typeof window !== "undefined" && "vibrate" in navigator) navigator.vibrate?.(25);
+    if (typeof window !== "undefined" && "vibrate" in navigator) navigator.vibrate?.(20);
   }
 
-  function toggleCheckbox(id: string) {
+  const completeQuestRef = useRef<HTMLDivElement | null>(null);
+
+  function toggleCheckbox(id: string, e?: React.MouseEvent) {
+    const card = (e?.currentTarget as HTMLElement)?.closest("[data-quest-card]") as HTMLElement | null;
     setQuests((prev) =>
       prev.map((q) => {
         if (q.id !== id || q.control.kind !== "checkbox") return q;
         const newDone = !q.control.done;
         if (newDone) {
-          fireXpGain(q.baseXp);
-          triggerZoom(q.stat);
+          fireXp(q.baseXp);
+          if (card) celebrateAt(card, STAT_HEX[q.stat]);
         }
         return { ...q, control: { kind: "checkbox", done: newDone } };
       }),
     );
   }
 
-  function bumpCount(id: string, delta: number) {
+  function bumpCount(id: string, delta: number, e?: React.MouseEvent) {
+    const card = (e?.currentTarget as HTMLElement)?.closest("[data-quest-card]") as HTMLElement | null;
     setQuests((prev) =>
       prev.map((q) => {
         if (q.id !== id || q.control.kind !== "count") return q;
         const wasDone = q.control.actual >= q.control.target;
         const actual = Math.max(0, q.control.actual + delta);
         const nowDone = actual >= q.control.target;
-        if (delta > 0) triggerZoom(q.stat);
-        if (!wasDone && nowDone) fireXpGain(q.baseXp);
+        if (!wasDone && nowDone) {
+          fireXp(q.baseXp);
+          if (card) celebrateAt(card, STAT_HEX[q.stat]);
+        }
         return { ...q, control: { ...q.control, actual } };
       }),
     );
-    if (typeof window !== "undefined" && "vibrate" in navigator) navigator.vibrate?.(8);
+    if (typeof window !== "undefined" && "vibrate" in navigator) navigator.vibrate?.(6);
   }
 
   function toggleTimer(id: string) {
@@ -211,546 +220,476 @@ export default function DashboardPreview() {
     );
   }
 
+  function celebrateAt(el: HTMLElement, colors: string[]) {
+    if (reduce) return;
+    const r = el.getBoundingClientRect();
+    const x = (r.left + r.right) / 2 / window.innerWidth;
+    const y = (r.top + r.bottom) / 2 / window.innerHeight;
+    fireConfetti(x, y, colors);
+  }
+
   function resetDay() {
     setQuests(INITIAL_QUESTS);
     setPlayer(INITIAL_PLAYER);
     setActiveStatFilter(null);
-    setTransientStat(null);
   }
 
-  // Scroll-driven parallax for the hero
-  const heroRef = useRef<HTMLDivElement>(null);
-  const { scrollYProgress: heroProgress } = useScroll({
-    target: heroRef,
-    offset: ["start start", "end start"],
+  const today = new Date();
+  const greeting = (() => {
+    const h = today.getHours();
+    if (h < 5) return "Late night";
+    if (h < 12) return "Good morning";
+    if (h < 17) return "Good afternoon";
+    if (h < 21) return "Good evening";
+    return "Late night";
+  })();
+  const dateStr = today.toLocaleDateString(undefined, {
+    weekday: "long",
+    month: "long",
+    day: "numeric",
   });
-  const heroTitleY = useSpring(useTransform(heroProgress, [0, 1], [0, -120]), { stiffness: 50, damping: 20 });
-  const heroFigureScale = useSpring(useTransform(heroProgress, [0, 1], [1, 1.1]), { stiffness: 60, damping: 22 });
-  const heroOpacity = useTransform(heroProgress, [0, 0.7], [1, 0.2]);
 
   return (
-    <main className="relative bg-slate-950 text-slate-100">
+    <main className="relative min-h-screen bg-slate-950 text-slate-100">
       <StudioCursor />
-      {/* Grain */}
       <div aria-hidden className="grain" />
 
-      {/* Global background mesh */}
+      {/* Background mesh */}
       <div aria-hidden className="pointer-events-none fixed inset-0 z-0">
-        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,rgba(59,130,246,0.16),transparent_55%)]" />
-        <div className="absolute inset-0 animate-mesh-drift bg-[radial-gradient(ellipse_25%_25%_at_20%_40%,rgba(139,92,246,0.18),transparent_60%),radial-gradient(ellipse_25%_25%_at_80%_75%,rgba(59,130,246,0.16),transparent_60%)]" />
-        <div className="absolute inset-x-0 bottom-0 h-[300px] bg-[radial-gradient(circle_at_50%_120%,rgba(168,85,247,0.12),transparent_60%)]" />
+        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_left,rgba(59,130,246,0.15),transparent_50%)]" />
+        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_bottom_right,rgba(168,85,247,0.13),transparent_50%)]" />
       </div>
 
-      {/* Top nav */}
-      <header className="fixed top-0 inset-x-0 z-40 px-6 py-5 flex items-center justify-between mix-blend-difference">
-        <div className="flex items-center gap-2 font-mono text-[10px] tracking-[0.4em] text-white">
-          <Logo />
-          <span>SYSTEM ⁄ HUNTER PROTOCOL</span>
-        </div>
-        <button
-          onClick={resetDay}
-          className="flex items-center gap-1.5 font-mono text-[10px] tracking-[0.4em] uppercase text-white"
-        >
-          <RotateCcw className="h-3 w-3" strokeWidth={2.5} />
-          Reset
-        </button>
-      </header>
-
-      {/* ============= HERO — pure typography ============= */}
-      <section
-        ref={heroRef}
-        className="relative z-10 min-h-[100svh] px-6 md:px-12 pt-32 pb-20 flex flex-col justify-between"
-      >
-        {/* Vertical side rails */}
-        <div className="absolute left-3 top-1/2 -translate-y-1/2 hidden lg:block">
-          <div className="rotate-180 [writing-mode:vertical-rl] font-mono text-[10px] tracking-[0.5em] text-slate-500">
-            DAILY · DESCENT · {new Date().toISOString().slice(0, 10)}
-          </div>
-        </div>
-        <div className="absolute right-3 top-1/2 -translate-y-1/2 hidden lg:block">
-          <div className="[writing-mode:vertical-rl] font-mono text-[10px] tracking-[0.5em] text-slate-500">
-            E·RANK ↦ MONARCH
-          </div>
-        </div>
-
-        <motion.div style={{ y: heroTitleY, opacity: heroOpacity }} className="max-w-6xl">
-          <motion.div
-            initial={{ opacity: 0, y: 24 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.8, ease: [0.22, 1, 0.36, 1] }}
-            className="font-mono text-[11px] tracking-[0.4em] text-blue-300 mb-6"
-          >
-            ⟶ DAY {player.streak} · LV {player.level} · {player.title.toUpperCase()}
-          </motion.div>
-
-          <motion.h1
-            initial={{ opacity: 0, y: 40 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 1, ease: [0.22, 1, 0.36, 1], delay: 0.05 }}
-            className="text-mega text-[clamp(72px,18vw,260px)] text-white"
-          >
-            Train.<br />
-            <span className="bg-gradient-to-r from-blue-400 via-purple-400 to-rose-400 bg-clip-text text-transparent">
-              Hunter.
-            </span>
-          </motion.h1>
-        </motion.div>
-
+      <div className="relative z-10 mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 pt-6 pb-12">
+        {/* Top bar */}
         <motion.div
-          initial={{ opacity: 0, y: 18 }}
+          initial={{ opacity: 0, y: -6 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.8, delay: 0.35 }}
-          className="grid grid-cols-12 gap-6 items-end max-w-6xl"
+          transition={{ duration: 0.5 }}
+          className="flex items-center justify-between"
         >
-          <p className="col-span-12 md:col-span-7 text-base text-slate-400 leading-relaxed max-w-md">
-            The System has assigned you {totalRequired} quests today. Clear them all to earn your rest.
-            Discipline compounds. The body recalibrates. Level up.
-          </p>
-
-          <div className="col-span-12 md:col-span-5 flex items-center gap-4 md:justify-end">
-            <a
-              href="#scan"
-              className="group inline-flex items-center gap-3 rounded-full border border-white/15 bg-white/5 px-5 py-3 font-mono text-xs tracking-[0.3em] uppercase text-white backdrop-blur transition-colors hover:bg-white/10"
-              data-cursor="hover"
-            >
-              Begin Descent
-              <span className="grid h-6 w-6 place-items-center rounded-full bg-blue-500 text-white transition-transform group-hover:translate-y-0.5">
-                <ArrowDown className="h-3 w-3" strokeWidth={3} />
-              </span>
-            </a>
-            <span className="font-mono text-[10px] tracking-[0.4em] uppercase text-slate-500">
-              Scroll
+          <div className="flex items-center gap-3">
+            <LogoMark />
+            <span className="font-mono text-[11px] tracking-[0.3em] uppercase text-slate-400">
+              Solo Leveling Life
             </span>
           </div>
-        </motion.div>
-      </section>
-
-      {/* ============= SCAN — Hunter figure HUD ============= */}
-      <section id="scan" className="relative z-10 px-6 md:px-12 py-16 md:py-24">
-        <Reveal>
-          <SectionEyebrow>01 · Scan</SectionEyebrow>
-        </Reveal>
-
-        <div className="mt-6 grid grid-cols-12 gap-6 md:gap-10 items-start">
-          {/* Console (left) */}
-          <Reveal>
-            <motion.div
-              style={{ scale: heroFigureScale }}
-              className="col-span-12 md:col-span-5 relative mx-auto max-w-sm md:max-w-none"
+          <div className="flex items-center gap-4">
+            <span className="hidden sm:inline font-mono text-[11px] tracking-widest uppercase text-slate-500">
+              {dateStr}
+            </span>
+            <button
+              onClick={resetDay}
+              data-cursor="hover"
+              className="flex items-center gap-1.5 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 font-mono text-[10px] tracking-[0.2em] uppercase text-slate-300 hover:bg-white/10 transition-colors"
             >
-              <HunterFigure zoom={zoom} />
-              <div className="pointer-events-none absolute inset-0">
-                <AnimatePresence>
-                  {xpFloaters.map((f) => (
+              <RotateCcw className="h-3 w-3" strokeWidth={2.5} />
+              Reset
+            </button>
+          </div>
+        </motion.div>
+
+        {/* Greeting hero */}
+        <motion.section
+          initial={{ opacity: 0, y: 16 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.7, ease: [0.22, 1, 0.36, 1] }}
+          className="mt-8 grid grid-cols-12 gap-4 md:gap-6 items-center"
+        >
+          <div className="col-span-12 lg:col-span-7">
+            <div className="font-mono text-[11px] tracking-[0.3em] uppercase text-blue-300">
+              {greeting}
+            </div>
+            <h1 className="mt-2 text-4xl sm:text-5xl md:text-6xl font-bold tracking-tight text-white">
+              {player.name}.
+            </h1>
+            <p className="mt-3 max-w-md text-slate-400 text-base">
+              {cleared
+                ? "Day cleared. You earned your rest."
+                : `${remaining} ${remaining === 1 ? "quest" : "quests"} left before you can relax. Let's go.`}
+            </p>
+          </div>
+          <div className="col-span-12 lg:col-span-5 flex justify-start lg:justify-end gap-2">
+            <Pill icon={<Trophy className="h-3.5 w-3.5" />} label={`Lv ${player.level}`} sub={player.title} />
+            <Pill icon={<Flame className="h-3.5 w-3.5 animate-flame" />} label={`${player.streak}d`} sub="Streak" />
+          </div>
+        </motion.section>
+
+        {/* === Bento === */}
+        <div className="mt-8 grid grid-cols-12 gap-4 md:gap-5">
+          {/* Activity Rings — centerpiece */}
+          <TiltCard className="col-span-12 lg:col-span-7 rounded-3xl">
+            <div className="relative overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-slate-900/80 to-slate-950 p-6 md:p-8 backdrop-blur-xl">
+              <div className="flex items-start justify-between">
+                <div>
+                  <div className="font-mono text-[10px] tracking-[0.3em] uppercase text-slate-500">
+                    Today's progress
+                  </div>
+                  <div className="mt-1 text-2xl font-semibold tracking-tight">
+                    {cleared ? (
+                      <span className="text-emerald-300">All cleared ✓</span>
+                    ) : (
+                      <span>{remaining} to go</span>
+                    )}
+                  </div>
+                </div>
+                <div className="text-right font-mono text-xs text-slate-400">
+                  <div className="text-blue-300 text-lg font-bold tabular-nums">
+                    <CountUp to={totalXpToday} duration={900} />
+                  </div>
+                  <div className="text-[10px] tracking-[0.2em] uppercase text-slate-500">XP today</div>
+                </div>
+              </div>
+
+              <div className="mt-6 grid grid-cols-12 items-center gap-6">
+                <div className="col-span-12 sm:col-span-7 flex justify-center">
+                  <ActivityRings
+                    size={280}
+                    centerLabel="Lv"
+                    centerValue={String(player.level)}
+                    rings={[
+                      {
+                        label: "Quests",
+                        progress: completedRequired / Math.max(1, totalRequired),
+                        gradient: ["#fb7185", "#e11d48"],
+                        glow: "rgba(244,63,94,0.6)",
+                        value: `${completedRequired}/${totalRequired}`,
+                        goal: "required cleared",
+                      },
+                      {
+                        label: "XP",
+                        progress: Math.min(1, totalXpToday / xpGoalToday),
+                        gradient: ["#60a5fa", "#7c3aed"],
+                        glow: "rgba(59,130,246,0.6)",
+                        value: `${totalXpToday}`,
+                        goal: `of ${xpGoalToday} xp`,
+                      },
+                      {
+                        label: "Active",
+                        progress: Math.min(1, activeMinutes / 120),
+                        gradient: ["#fbbf24", "#d97706"],
+                        glow: "rgba(251,191,36,0.6)",
+                        value: `${activeMinutes}m`,
+                        goal: "of 2h",
+                      },
+                    ]}
+                  />
+                </div>
+
+                {/* Ring legend */}
+                <div className="col-span-12 sm:col-span-5 space-y-3">
+                  <RingLegend dot="from-rose-400 to-rose-600" label="Quests cleared" value={`${completedRequired} / ${totalRequired}`} />
+                  <RingLegend dot="from-blue-400 to-purple-500" label="XP earned" value={`${totalXpToday} / ${xpGoalToday}`} />
+                  <RingLegend dot="from-amber-400 to-amber-600" label="Active minutes" value={`${activeMinutes} / 120`} />
+                  <div className="pt-3 border-t border-white/5">
+                    <div className="flex items-baseline justify-between text-xs font-mono">
+                      <span className="text-slate-400 uppercase tracking-widest">Level</span>
+                      <span className="text-blue-300 tabular-nums">
+                        <CountUp to={player.xpInLevel} duration={900} /> / {player.xpToNext}
+                      </span>
+                    </div>
+                    <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-white/5">
+                      <motion.div
+                        initial={false}
+                        animate={{ width: `${Math.min(100, (player.xpInLevel / player.xpToNext) * 100)}%` }}
+                        transition={{ type: "spring", stiffness: 80, damping: 22 }}
+                        className="h-full rounded-full bg-gradient-to-r from-blue-500 to-purple-500 shadow-[0_0_18px_rgba(59,130,246,0.6)]"
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </TiltCard>
+
+          {/* Streak tile */}
+          <TiltCard className="col-span-12 sm:col-span-6 lg:col-span-5 rounded-3xl">
+            <div className="relative overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-orange-950/40 to-slate-950 p-6 md:p-8 backdrop-blur-xl h-full">
+              <div className="flex items-start justify-between">
+                <div>
+                  <div className="font-mono text-[10px] tracking-[0.3em] uppercase text-orange-300">Streak</div>
+                  <div className="mt-2 flex items-baseline gap-2">
+                    <span className="font-display text-7xl text-white leading-none tabular-nums">
+                      <CountUp to={player.streak} duration={1200} />
+                    </span>
+                    <span className="font-mono text-sm tracking-widest uppercase text-orange-200">days</span>
+                  </div>
+                </div>
+                <div className="relative">
+                  <Flame className="h-10 w-10 text-orange-300 animate-flame drop-shadow-[0_0_18px_rgba(251,146,60,0.8)]" strokeWidth={2} />
+                </div>
+              </div>
+
+              {/* Heatmap last 30 days */}
+              <div className="mt-6">
+                <div className="font-mono text-[10px] tracking-[0.3em] uppercase text-slate-500 mb-2">
+                  Last 30 days
+                </div>
+                <div className="grid grid-cols-15 gap-1" style={{ gridTemplateColumns: "repeat(15, minmax(0, 1fr))" }}>
+                  {player.heat.map((h, i) => (
                     <motion.div
-                      key={f.id}
-                      initial={{ opacity: 0, y: 10, scale: 0.6 }}
-                      animate={{ opacity: 1, y: -90, scale: 1.15 }}
-                      exit={{ opacity: 0 }}
-                      transition={{ duration: 1.3, ease: [0.22, 1, 0.36, 1] }}
-                      className="absolute font-display text-3xl text-blue-300 drop-shadow-[0_0_18px_rgba(59,130,246,0.95)]"
-                      style={{ left: `${f.x}%`, top: `${f.y}%` }}
-                    >
-                      +{f.xp} XP
-                    </motion.div>
-                  ))}
-                </AnimatePresence>
-              </div>
-            </motion.div>
-          </Reveal>
-
-          {/* Status (right) */}
-          <Reveal>
-            <div className="col-span-12 md:col-span-7 space-y-6">
-              <div>
-                <h2 className="text-mega text-[clamp(36px,6vw,80px)] text-white">
-                  Status<br />
-                  <span className="text-slate-500">Readout.</span>
-                </h2>
-              </div>
-
-              {/* XP block */}
-              <div className="space-y-3">
-                <div className="flex items-baseline justify-between font-mono text-[10px] uppercase tracking-[0.3em] text-slate-400">
-                  <span>Experience</span>
-                  <span className="tabular-nums">
-                    <span className="text-blue-300">{player.xpInLevel}</span>
-                    <span className="text-slate-700"> / {player.xpToNext}</span>
-                  </span>
-                </div>
-                <div className="relative h-2 overflow-hidden rounded-full bg-white/5 ring-1 ring-white/10">
-                  <motion.div
-                    initial={false}
-                    animate={{ width: `${Math.min(100, (player.xpInLevel / player.xpToNext) * 100)}%` }}
-                    transition={{ type: "spring", stiffness: 80, damping: 20 }}
-                    className="absolute inset-y-0 left-0 rounded-full bg-gradient-to-r from-blue-500 via-blue-400 to-purple-500 shadow-[0_0_22px_rgba(59,130,246,0.7)]"
-                  >
-                    <div className="absolute inset-0 bg-[linear-gradient(90deg,transparent_0%,rgba(255,255,255,0.55)_50%,transparent_100%)] animate-shimmer" />
-                  </motion.div>
-                </div>
-              </div>
-
-              {/* Stat grid */}
-              <div>
-                <div className="font-mono text-[10px] uppercase tracking-[0.3em] text-slate-500 mb-2">
-                  Tap a region · Camera locks
-                </div>
-                <div className="grid grid-cols-5 gap-2">
-                  {(Object.keys(STAT_META) as Stat[]).map((s, idx) => (
-                    <StatPin
-                      key={s}
-                      stat={s}
-                      value={player.stats[s]}
-                      active={zoom === s}
-                      onClick={() => setActiveStatFilter((prev) => (prev === s ? null : s))}
-                      delay={idx * 0.06}
-                      reduce={reduce ?? false}
+                      key={i}
+                      initial={{ scale: 0 }}
+                      animate={{ scale: 1 }}
+                      transition={{ delay: i * 0.012, type: "spring", stiffness: 300, damping: 18 }}
+                      className={cn(
+                        "aspect-square rounded-sm",
+                        h >= 1 ? "bg-emerald-500/80" : h > 0 ? "bg-amber-500/60" : "bg-white/5",
+                      )}
+                      style={{
+                        boxShadow: h >= 1 ? "0 0 6px rgba(16,185,129,0.5)" : undefined,
+                      }}
+                      title={`${i + 1}d ago: ${h >= 1 ? "cleared" : h > 0 ? "partial" : "missed"}`}
                     />
                   ))}
                 </div>
               </div>
 
-              {/* Quick stats */}
-              <div className="grid grid-cols-3 gap-2 pt-2">
-                <Stat kv="Level" v={player.level} />
-                <Stat kv="Streak" v={player.streak} suffix="d" />
-                <Stat kv="Cleared" v={`${totalRequired - remaining}/${totalRequired}`} />
+              <div className="mt-5 text-xs text-slate-400">
+                <span className="text-orange-300 font-semibold">{cleared ? player.streak + 1 : player.streak}</span>{" "}
+                {cleared ? "days locked in. Don't break the chain." : "days strong. Clear today to extend."}
               </div>
             </div>
-          </Reveal>
+          </TiltCard>
+
+          {/* Stat overview */}
+          <TiltCard className="col-span-12 lg:col-span-7 rounded-3xl">
+            <div className="relative overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-slate-900/80 to-slate-950 p-6 md:p-7 backdrop-blur-xl">
+              <div className="flex items-center justify-between mb-5">
+                <div>
+                  <div className="font-mono text-[10px] tracking-[0.3em] uppercase text-slate-500">
+                    Stats
+                  </div>
+                  <div className="mt-1 text-lg font-semibold">Your build</div>
+                </div>
+                {activeStatFilter && (
+                  <button
+                    onClick={() => setActiveStatFilter(null)}
+                    data-cursor="hover"
+                    className="font-mono text-[10px] uppercase tracking-widest text-blue-300"
+                  >
+                    Clear filter ×
+                  </button>
+                )}
+              </div>
+              <div className="grid grid-cols-5 gap-2 sm:gap-3">
+                {(Object.keys(STAT_META) as Stat[]).map((s, idx) => (
+                  <StatTile
+                    key={s}
+                    stat={s}
+                    value={player.stats[s]}
+                    active={activeStatFilter === s}
+                    onClick={() => setActiveStatFilter((p) => (p === s ? null : s))}
+                    delay={0.05 + idx * 0.06}
+                  />
+                ))}
+              </div>
+            </div>
+          </TiltCard>
+
+          {/* Compact info */}
+          <TiltCard className="col-span-12 sm:col-span-6 lg:col-span-5 rounded-3xl">
+            <div className="relative overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-purple-950/30 to-slate-950 p-6 md:p-7 backdrop-blur-xl h-full">
+              <div className="flex items-start justify-between">
+                <div>
+                  <div className="font-mono text-[10px] tracking-[0.3em] uppercase text-purple-300">
+                    Next milestone
+                  </div>
+                  <div className="mt-2 text-3xl font-bold tracking-tight text-white">
+                    {nextTitle(player.level).name}
+                  </div>
+                  <div className="mt-1 font-mono text-xs text-slate-400">
+                    Lv {nextTitle(player.level).level} · {nextTitle(player.level).bonus}
+                  </div>
+                </div>
+                <TrendingUp className="h-7 w-7 text-purple-300" strokeWidth={2} />
+              </div>
+              <div className="mt-6">
+                <div className="flex justify-between font-mono text-[10px] uppercase tracking-widest text-slate-400 mb-1.5">
+                  <span>Progress</span>
+                  <span className="text-purple-300 tabular-nums">
+                    {player.level} / {nextTitle(player.level).level}
+                  </span>
+                </div>
+                <div className="h-2 overflow-hidden rounded-full bg-white/5">
+                  <motion.div
+                    initial={false}
+                    animate={{
+                      width: `${Math.min(100, (player.level / nextTitle(player.level).level) * 100)}%`,
+                    }}
+                    transition={{ type: "spring", stiffness: 70, damping: 22 }}
+                    className="h-full rounded-full bg-gradient-to-r from-purple-500 to-pink-500 shadow-[0_0_18px_rgba(168,85,247,0.5)]"
+                  />
+                </div>
+              </div>
+              <div className="mt-5 text-xs text-slate-400">
+                {nextTitle(player.level).level - player.level} levels until promotion.
+              </div>
+            </div>
+          </TiltCard>
         </div>
-      </section>
 
-      {/* ============= MARQUEE DIVIDER ============= */}
-      <section className="relative z-10 py-6 border-y border-white/5 bg-slate-950/40 backdrop-blur-sm">
-        <Marquee
-          speed="normal"
-          items={[
-            <BigMarqueeItem key="1" text={`Lv ${player.level}`} sub={player.title} />,
-            <BigMarqueeItem key="2" text="100 / 100" sub="Push-ups" />,
-            <BigMarqueeItem key="3" text="90 min" sub="Study" />,
-            <BigMarqueeItem key="4" text={`🜂 ${player.streak}`} sub="Streak" />,
-            <BigMarqueeItem key="5" text="STR · VIT · AGI · INT · PER" sub="Five Pillars" />,
-            <BigMarqueeItem key="6" text="The body recalibrates" sub="Daily" />,
-          ]}
-        />
-      </section>
-
-      {/* ============= RELAX GATE ============= */}
-      <section className="relative z-10 px-6 md:px-12 py-12">
-        <Reveal>
-          <SectionEyebrow>02 · Gate</SectionEyebrow>
-          <div className="mt-4">
-            <AnimatePresence mode="wait">
-              {cleared ? <ClearedGate key="cleared" /> : <LockedGate key="locked" remaining={remaining} total={totalRequired} />}
-            </AnimatePresence>
-          </div>
-        </Reveal>
-      </section>
-
-      {/* ============= TODAY ============= */}
-      <section id="today" className="relative z-10 px-6 py-16 md:py-24">
-        <Reveal>
-          <SectionEyebrow>03 · Today</SectionEyebrow>
-          <div className="mt-3 flex items-end justify-between flex-wrap gap-4">
-            <h2 className="text-mega text-[clamp(40px,7vw,90px)] text-white">
-              Today’s<br />
-              <span className="text-slate-500">Descent.</span>
-            </h2>
-            <div className="font-mono text-xs uppercase tracking-widest text-slate-400">
-              {activeStatFilter ? (
-                <button
-                  onClick={() => setActiveStatFilter(null)}
-                  className="rounded-full border border-white/10 px-3 py-1.5 text-white"
-                >
-                  Filter · {STAT_META[activeStatFilter].label} ×
-                </button>
-              ) : (
-                <span>
-                  {totalRequired - remaining} / {totalRequired} cleared
-                </span>
-              )}
+        {/* === Today's quests === */}
+        <section className="mt-10">
+          <div className="flex items-end justify-between mb-4">
+            <div>
+              <div className="font-mono text-[10px] tracking-[0.3em] uppercase text-slate-500">
+                Today
+              </div>
+              <h2 className="mt-1 text-2xl sm:text-3xl font-bold tracking-tight">
+                {activeStatFilter ? (
+                  <>
+                    <span className={STAT_META[activeStatFilter].tint}>{STAT_META[activeStatFilter].label}</span>{" "}
+                    quests
+                  </>
+                ) : (
+                  "Today's quests"
+                )}
+              </h2>
+            </div>
+            <div className="font-mono text-[11px] tabular-nums tracking-widest uppercase text-slate-400">
+              {completedRequired} / {totalRequired} cleared
             </div>
           </div>
-        </Reveal>
 
-        <ul className="mt-10 space-y-3">
-          <AnimatePresence initial={false}>
-            {visibleQuests.map((q, idx) => (
-              <QuestCard
-                key={q.id}
-                quest={q}
-                index={idx}
-                zoomedOn={zoom === q.stat}
-                onCheck={() => toggleCheckbox(q.id)}
-                onBump={(d) => bumpCount(q.id, d)}
-                onTimer={() => toggleTimer(q.id)}
-                onHover={() => triggerZoom(q.stat)}
-              />
-            ))}
-          </AnimatePresence>
-        </ul>
-      </section>
+          <ul className="space-y-3" ref={completeQuestRef}>
+            <AnimatePresence initial={false}>
+              {visibleQuests.map((q, idx) => (
+                <QuestCard
+                  key={q.id}
+                  quest={q}
+                  index={idx}
+                  onCheck={(e) => toggleCheckbox(q.id, e)}
+                  onBump={(d, e) => bumpCount(q.id, d, e)}
+                  onTimer={() => toggleTimer(q.id)}
+                />
+              ))}
+            </AnimatePresence>
+          </ul>
+        </section>
 
-      {/* ============= MANIFESTO ============= */}
-      <section className="relative z-10 px-6 py-24 md:py-32 border-y border-white/5">
-        <Reveal>
-          <SectionEyebrow>04 · The System</SectionEyebrow>
-          <p className="mt-6 text-mega text-[clamp(40px,8vw,110px)] text-white leading-[0.95]">
-            The body<br />
-            <span className="text-slate-500">recalibrates.</span><br />
-            Every<br />
-            rep.<br />
-            <span className="bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">Forever.</span>
-          </p>
-        </Reveal>
-      </section>
-
-      {/* ============= MARQUEE FOOTER ============= */}
-      <section className="relative z-10 py-6 border-y border-white/5 bg-slate-950/40 backdrop-blur-sm">
-        <Marquee
-          reverse
-          items={[
-            <BigMarqueeItem key="a" text="Awaken" sub="Lv 10" />,
-            <BigMarqueeItem key="b" text="Elite Hunter" sub="Lv 25" />,
-            <BigMarqueeItem key="c" text="Necromancer" sub="Lv 50" />,
-            <BigMarqueeItem key="d" text="Shadow Monarch" sub="Lv 100" />,
-          ]}
-        />
-      </section>
-
-      {/* ============= FOOTER ============= */}
-      <footer className="relative z-10 px-6 py-12 flex items-end justify-between flex-wrap gap-4">
-        <div>
-          <div className="text-mega text-5xl text-white">SOLO LEVELING LIFE</div>
-          <div className="font-mono text-[10px] tracking-[0.5em] text-slate-500 mt-2">
-            v0.1 · STATIC PREVIEW
-          </div>
-        </div>
-        <div className="font-mono text-[10px] tracking-[0.4em] uppercase text-slate-500 max-w-xs text-right">
-          Built by the Player. Phase 2 wires this to Supabase.
-        </div>
-      </footer>
-
-      <AnimatePresence>
-        {levelUpVisible && (
-          <LevelUpOverlay
-            level={player.level}
-            title={player.title}
-            onClose={() => setLevelUpVisible(false)}
-          />
-        )}
-      </AnimatePresence>
+        <p className="mt-10 text-center font-mono text-[10px] tracking-[0.3em] uppercase text-slate-600">
+          Preview · Phase 2 wires this to Supabase
+        </p>
+      </div>
     </main>
   );
 }
 
-/* ----------------------------------------------------------
- * Small presentational pieces
- * ---------------------------------------------------------- */
+/* -------- helpers -------- */
 
-function Reveal({ children }: { children: React.ReactNode }) {
-  return (
-    <motion.div
-      initial={{ opacity: 0, y: 32 }}
-      whileInView={{ opacity: 1, y: 0 }}
-      viewport={{ once: true, margin: "-15%" }}
-      transition={{ duration: 0.9, ease: [0.22, 1, 0.36, 1] }}
-    >
-      {children}
-    </motion.div>
-  );
+function nextTitle(level: number) {
+  if (level < 10) return { name: "Awakened", level: 10, bonus: "+5% XP" };
+  if (level < 25) return { name: "Elite Hunter", level: 25, bonus: "+10% XP" };
+  if (level < 50) return { name: "Necromancer", level: 50, bonus: "+15% XP" };
+  if (level < 100) return { name: "Shadow Monarch", level: 100, bonus: "+20% XP" };
+  return { name: "Maxed", level: 100, bonus: "+20% XP" };
 }
 
-function SectionEyebrow({ children }: { children: React.ReactNode }) {
+function Pill({ icon, label, sub }: { icon: React.ReactNode; label: string; sub: string }) {
   return (
-    <div className="font-mono text-[10px] tracking-[0.5em] uppercase text-blue-300">
-      <span className="inline-block h-px w-6 align-middle bg-blue-400/60 mr-2" />
-      {children}
-    </div>
-  );
-}
-
-function Logo() {
-  return (
-    <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" aria-hidden>
-      <polygon
-        points="12,2 22,8 22,16 12,22 2,16 2,8"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.6"
-      />
-    </svg>
-  );
-}
-
-function BigMarqueeItem({ text, sub }: { text: string; sub: string }) {
-  return (
-    <span className="flex items-baseline gap-3">
-      <span className="text-mega text-[clamp(36px,6vw,80px)] text-white whitespace-nowrap">{text}</span>
-      <span className="font-mono text-[10px] tracking-[0.4em] uppercase text-slate-500">{sub}</span>
-    </span>
-  );
-}
-
-function Stat({ kv, v, suffix }: { kv: string; v: string | number; suffix?: string }) {
-  return (
-    <div className="rounded-xl border border-white/5 bg-white/[0.03] p-3 backdrop-blur-sm">
-      <div className="font-mono text-[9px] tracking-[0.3em] uppercase text-slate-500">{kv}</div>
-      <div className="font-display text-2xl text-white leading-none mt-1">
-        {v}
-        {suffix && <span className="text-slate-500 text-base">{suffix}</span>}
+    <div className="flex items-center gap-2.5 rounded-full border border-white/10 bg-white/[0.04] px-4 py-2 backdrop-blur-sm">
+      <span className="text-blue-300">{icon}</span>
+      <div>
+        <div className="font-bold text-sm leading-none">{label}</div>
+        <div className="font-mono text-[9px] tracking-widest uppercase text-slate-400 leading-none mt-0.5">
+          {sub}
+        </div>
       </div>
     </div>
   );
 }
 
-/* ----------------------------------------------------------
- * Stat zoom pin
- * ---------------------------------------------------------- */
+function RingLegend({ dot, label, value }: { dot: string; label: string; value: string }) {
+  return (
+    <div className="flex items-center gap-3">
+      <span className={cn("h-3 w-3 rounded-full bg-gradient-to-br", dot)} />
+      <div className="flex-1 min-w-0">
+        <div className="font-mono text-[10px] tracking-widest uppercase text-slate-400">
+          {label}
+        </div>
+        <div className="font-mono text-sm font-semibold text-white tabular-nums">{value}</div>
+      </div>
+    </div>
+  );
+}
 
-function StatPin({
+function LogoMark() {
+  return (
+    <div className="relative h-8 w-8">
+      <svg viewBox="0 0 32 32" className="h-full w-full">
+        <defs>
+          <linearGradient id="logo-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stopColor="#3b82f6" />
+            <stop offset="100%" stopColor="#a855f7" />
+          </linearGradient>
+        </defs>
+        <polygon
+          points="16,3 28,10 28,22 16,29 4,22 4,10"
+          fill="none"
+          stroke="url(#logo-grad)"
+          strokeWidth="2"
+        />
+        <circle cx="16" cy="16" r="3" fill="url(#logo-grad)" />
+      </svg>
+    </div>
+  );
+}
+
+function StatTile({
   stat,
   value,
   active,
   onClick,
   delay,
-  reduce,
 }: {
   stat: Stat;
   value: number;
   active: boolean;
   onClick: () => void;
   delay: number;
-  reduce: boolean;
 }) {
   const meta = STAT_META[stat];
   return (
     <motion.button
       type="button"
       onClick={onClick}
-      initial={{ opacity: 0, y: 14, scale: 0.92 }}
-      animate={{ opacity: 1, y: 0, scale: 1 }}
+      data-cursor="hover"
+      initial={{ opacity: 0, y: 12 }}
+      animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.5, delay, ease: [0.22, 1, 0.36, 1] }}
-      whileHover={reduce ? undefined : { scale: 1.06, y: -2 }}
-      whileTap={reduce ? undefined : { scale: 0.94 }}
+      whileHover={{ y: -3 }}
+      whileTap={{ scale: 0.95 }}
       className={cn(
-        "group flex flex-col items-center gap-0.5 rounded-xl border bg-white/[0.04] p-2 backdrop-blur-sm transition-colors",
-        active ? cn("ring-2 ring-offset-2 ring-offset-slate-950", meta.ring, "border-transparent") : "border-white/10 hover:border-white/25",
+        "group flex flex-col items-center gap-1 rounded-2xl border bg-white/[0.04] p-3 backdrop-blur-sm transition-colors min-h-[100px]",
+        active ? cn("ring-2", meta.ring, "border-transparent") : "border-white/10 hover:border-white/25",
       )}
       aria-pressed={active}
-      data-cursor="hover"
     >
-      <div className={cn("font-mono text-[9px] font-bold tracking-[0.2em]", meta.text)}>{stat}</div>
-      <div className="font-display text-2xl text-white tabular-nums leading-none">{value}</div>
-      <div className="font-mono text-[8px] tracking-[0.3em] text-slate-500 uppercase">{meta.bodyPart}</div>
+      <span className="text-2xl leading-none">{meta.emoji}</span>
+      <span className="font-display text-2xl text-white leading-none tabular-nums">{value}</span>
+      <span className={cn("font-mono text-[9px] tracking-widest uppercase", meta.tint)}>{stat}</span>
     </motion.button>
   );
 }
 
-/* ----------------------------------------------------------
- * Relax Gate
- * ---------------------------------------------------------- */
-
-function LockedGate({ remaining, total }: { remaining: number; total: number }) {
-  return (
-    <motion.div
-      initial={{ opacity: 0, scale: 0.97 }}
-      animate={{ opacity: 1, scale: 1 }}
-      exit={{ opacity: 0, scale: 0.97 }}
-      transition={{ duration: 0.5 }}
-      className="relative overflow-hidden rounded-3xl border border-red-500/30 bg-gradient-to-b from-red-950/40 to-slate-950 p-8 md:p-12 animate-pulse-glow-red"
-    >
-      <div className="absolute inset-0 opacity-[0.06]" style={{ backgroundImage: "repeating-linear-gradient(45deg, #ef4444 0 10px, transparent 10px 22px)" }} />
-      <div className="relative grid grid-cols-12 gap-6 items-center">
-        <div className="col-span-12 md:col-span-7">
-          <div className="font-mono text-[10px] tracking-[0.5em] uppercase text-red-300">Status</div>
-          <div className="text-mega text-[clamp(80px,14vw,180px)] text-red-300 mt-2">
-            Locked.
-          </div>
-        </div>
-        <div className="col-span-12 md:col-span-5 space-y-3">
-          <div className="flex items-baseline gap-3">
-            <span className="font-display text-7xl text-white tabular-nums">{remaining}</span>
-            <span className="font-mono text-xs tracking-widest uppercase text-red-200/80">
-              of {total} quests remain
-            </span>
-          </div>
-          <div className="flex items-center gap-2 rounded-full border border-red-500/30 bg-red-500/10 px-4 py-2 w-fit">
-            <Lock className="h-3.5 w-3.5 text-red-300" strokeWidth={2.5} />
-            <span className="font-mono text-[10px] tracking-[0.3em] uppercase text-red-200">
-              Train, Hunter
-            </span>
-          </div>
-        </div>
-      </div>
-    </motion.div>
-  );
-}
-
-function ClearedGate() {
-  return (
-    <motion.div
-      initial={{ opacity: 0, scale: 0.95 }}
-      animate={{ opacity: 1, scale: 1 }}
-      exit={{ opacity: 0, scale: 0.95 }}
-      transition={{ type: "spring", stiffness: 280, damping: 20 }}
-      className="relative overflow-hidden rounded-3xl border border-emerald-500/40 bg-gradient-to-b from-emerald-950/50 to-slate-950 p-8 md:p-12 shadow-[0_0_80px_rgba(16,185,129,0.25)]"
-    >
-      <div className="absolute inset-0">
-        {Array.from({ length: 12 }).map((_, i) => (
-          <motion.div
-            key={i}
-            initial={{ opacity: 0, scaleY: 0 }}
-            animate={{ opacity: [0, 0.5, 0], scaleY: [0, 1, 1] }}
-            transition={{ duration: 1.4, delay: i * 0.04 }}
-            className="absolute left-1/2 top-1/2 h-48 w-px origin-bottom -translate-x-1/2 bg-emerald-400/60"
-            style={{ transform: `translate(-50%, -100%) rotate(${i * 30}deg)` }}
-          />
-        ))}
-      </div>
-      <div className="relative grid grid-cols-12 gap-6 items-center">
-        <div className="col-span-12 md:col-span-7">
-          <div className="font-mono text-[10px] tracking-[0.5em] uppercase text-emerald-300">Status</div>
-          <div className="text-mega text-[clamp(80px,14vw,180px)] text-emerald-300 mt-2">
-            Cleared.
-          </div>
-        </div>
-        <div className="col-span-12 md:col-span-5">
-          <div className="text-base text-emerald-200/80">You may rest, Hunter.</div>
-          <div className="mt-2 font-mono text-[10px] tracking-[0.3em] uppercase text-emerald-300/60">
-            {new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-          </div>
-        </div>
-      </div>
-    </motion.div>
-  );
-}
-
-/* ----------------------------------------------------------
- * Quest card
- * ---------------------------------------------------------- */
+/* -------- Quest card -------- */
 
 function QuestCard({
   quest,
   index,
-  zoomedOn,
   onCheck,
   onBump,
   onTimer,
-  onHover,
 }: {
   quest: Quest;
   index: number;
-  zoomedOn: boolean;
-  onCheck: () => void;
-  onBump: (delta: number) => void;
+  onCheck: (e: React.MouseEvent) => void;
+  onBump: (delta: number, e: React.MouseEvent) => void;
   onTimer: () => void;
-  onHover: () => void;
 }) {
   const meta = STAT_META[quest.stat];
   const done = isQuestDone(quest.control);
-
   const progress =
     quest.control.kind === "count"
       ? quest.control.target > 0
@@ -761,88 +700,93 @@ function QuestCard({
         : done
           ? 100
           : 0;
-
-  const isTimerRunning = quest.control.kind === "timer" && quest.control.running;
+  const running = quest.control.kind === "timer" && quest.control.running;
 
   return (
     <motion.li
+      data-quest-card
       layout
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: done ? 0.5 : 1, y: 0 }}
-      exit={{ opacity: 0, y: -16 }}
-      transition={{ duration: 0.5, delay: index * 0.04, ease: [0.22, 1, 0.36, 1] }}
-      onMouseEnter={onHover}
-      onTouchStart={onHover}
+      initial={{ opacity: 0, y: 12 }}
+      animate={{ opacity: done ? 0.6 : 1, y: 0 }}
+      exit={{ opacity: 0, y: -10 }}
+      transition={{ duration: 0.45, delay: index * 0.04, ease: [0.22, 1, 0.36, 1] }}
       className={cn(
-        "group relative overflow-hidden rounded-3xl border bg-white/[0.03] px-6 py-5 backdrop-blur-md transition-colors",
+        "group relative overflow-hidden rounded-2xl border bg-white/[0.03] px-4 py-4 backdrop-blur-sm transition-colors",
         done && "border-emerald-500/30 bg-emerald-950/15",
         !done && quest.penalty && "border-red-500/30 bg-red-950/20",
-        !done && !quest.penalty && (zoomedOn ? cn("ring-2", meta.ring, "border-transparent") : "border-white/10"),
-        isTimerRunning && "animate-pulse-glow-blue border-blue-500/40",
+        !done && !quest.penalty && "border-white/10",
+        running && "border-blue-500/40 animate-pulse-glow-blue",
       )}
     >
-      {/* Big number on the left */}
-      <div className="grid grid-cols-12 gap-4 items-center">
-        <div className="col-span-2 md:col-span-1">
-          <span className="font-display text-3xl md:text-5xl text-slate-700 tabular-nums">
-            {String(index + 1).padStart(2, "0")}
-          </span>
+      <div className="flex items-center gap-4">
+        {/* Emoji */}
+        <div
+          className={cn(
+            "grid h-12 w-12 shrink-0 place-items-center rounded-xl text-2xl",
+            done ? "bg-emerald-500/15" : quest.penalty ? "bg-red-500/15" : "bg-white/5",
+          )}
+        >
+          <span aria-hidden>{meta.emoji}</span>
         </div>
 
-        <div className="col-span-10 md:col-span-7 min-w-0">
-          <div className="mb-1 flex flex-wrap items-center gap-1.5">
-            <span className={cn("rounded border px-1.5 py-0.5 text-[9px] font-mono font-bold tracking-[0.2em]", meta.chip)}>
-              {quest.stat} · {meta.bodyPart}
+        {/* Body */}
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <span className={cn("rounded border px-1.5 py-0.5 text-[9px] font-mono font-bold tracking-[0.2em]",
+              "border-white/10", meta.tint)}>
+              {quest.stat}
             </span>
             {quest.penalty && (
-              <span className="flex items-center gap-1 rounded border border-red-500/40 bg-red-500/15 px-1.5 py-0.5 text-[9px] font-mono font-bold tracking-widest text-red-300">
-                <AlertTriangle className="h-2.5 w-2.5" strokeWidth={3} />
+              <span className="rounded border border-red-500/40 bg-red-500/10 px-1.5 py-0.5 text-[9px] font-mono font-bold tracking-widest text-red-300">
                 PENALTY
               </span>
             )}
             {!quest.required && !quest.penalty && (
-              <span className="rounded border border-slate-700 bg-slate-800/60 px-1.5 py-0.5 text-[9px] font-mono font-bold tracking-widest text-slate-400">
+              <span className="rounded border border-white/10 bg-white/5 px-1.5 py-0.5 text-[9px] font-mono font-bold tracking-widest text-slate-400">
                 OPTIONAL
               </span>
             )}
-            {done && (
-              <span className="flex items-center gap-1 rounded border border-emerald-500/40 bg-emerald-500/15 px-1.5 py-0.5 text-[9px] font-mono font-bold tracking-widest text-emerald-300">
-                <Check className="h-2.5 w-2.5" strokeWidth={3} />
-                +{quest.baseXp} XP
-              </span>
-            )}
           </div>
-          <div className={cn("font-display text-3xl md:text-4xl leading-none tracking-tight", done ? "text-slate-500 line-through" : "text-white")}>
+          <div className={cn("mt-1 text-base sm:text-lg font-semibold leading-tight tracking-tight",
+            done ? "text-slate-500 line-through" : "text-white")}>
             {quest.name}
           </div>
-          {!done && (
-            <div className="mt-1.5 text-[11px] font-mono tracking-widest uppercase text-slate-500">
-              <Sparkles className="mr-1 inline h-3 w-3 -translate-y-px text-blue-400" strokeWidth={2.5} />
-              {quest.baseXp} XP reward
-            </div>
-          )}
+          <div className="mt-1 flex items-center gap-2 text-[11px] font-mono tracking-widest uppercase text-slate-500">
+            <Sparkles className="h-3 w-3 text-blue-400" strokeWidth={2.5} />
+            +{quest.baseXp} XP
+            {quest.control.kind === "count" && (
+              <span className="text-slate-500"> · target {quest.control.target}</span>
+            )}
+            {quest.control.kind === "timer" && (
+              <span className="text-slate-500"> · {quest.control.targetMin} min</span>
+            )}
+          </div>
         </div>
 
-        <div className="col-span-12 md:col-span-4 flex items-center justify-end gap-3">
-          {/* Readout */}
-          {quest.control.kind !== "checkbox" && (
-            <div className="font-mono text-sm tabular-nums text-slate-300 min-w-[80px] text-right">
-              {quest.control.kind === "count" && (
-                <>
-                  <span className={done ? "text-emerald-300" : "text-white font-bold"}>{quest.control.actual}</span>
-                  <span className="text-slate-600"> / {quest.control.target}</span>
-                </>
-              )}
-              {quest.control.kind === "timer" && (
-                <>
-                  <span className={done ? "text-emerald-300" : "text-white font-bold"}>{formatMmSs(quest.control.elapsedSec)}</span>
-                  <span className="text-slate-600"> / {String(quest.control.targetMin).padStart(2, "0")}:00</span>
-                </>
-              )}
-            </div>
-          )}
+        {/* Readout */}
+        {quest.control.kind !== "checkbox" && (
+          <div className="hidden sm:block min-w-[80px] text-right font-mono text-sm tabular-nums">
+            {quest.control.kind === "count" && (
+              <>
+                <span className={done ? "text-emerald-300" : "text-white font-bold"}>
+                  {quest.control.actual}
+                </span>
+                <span className="text-slate-600"> / {quest.control.target}</span>
+              </>
+            )}
+            {quest.control.kind === "timer" && (
+              <>
+                <span className={done ? "text-emerald-300" : "text-white font-bold"}>
+                  {fmtMmSs(quest.control.elapsedSec)}
+                </span>
+                <span className="text-slate-600"> / {String(quest.control.targetMin).padStart(2, "0")}:00</span>
+              </>
+            )}
+          </div>
+        )}
 
-          {/* Control */}
+        {/* Control */}
+        <div className="shrink-0">
           {quest.control.kind === "checkbox" && (
             <motion.button
               type="button"
@@ -863,7 +807,7 @@ function QuestCard({
             <div className="flex items-center gap-1.5">
               <motion.button
                 type="button"
-                onClick={() => onBump(-1)}
+                onClick={(e) => onBump(-1, e)}
                 whileTap={{ scale: 0.88 }}
                 data-cursor="hover"
                 aria-label="Decrement"
@@ -874,7 +818,7 @@ function QuestCard({
               </motion.button>
               <motion.button
                 type="button"
-                onClick={() => onBump(+1)}
+                onClick={(e) => onBump(+1, e)}
                 whileTap={{ scale: 0.88 }}
                 data-cursor="hover"
                 aria-label="Increment"
@@ -895,25 +839,25 @@ function QuestCard({
               whileTap={{ scale: 0.88 }}
               data-cursor="hover"
               disabled={done}
-              aria-label={quest.control.running ? "Pause timer" : "Start timer"}
+              aria-label={running ? "Pause" : "Start"}
               className={cn(
                 "flex h-12 w-12 items-center justify-center rounded-xl border-2 transition-colors disabled:opacity-40",
-                quest.control.running
+                running
                   ? "border-red-400/60 bg-red-500/15 text-red-300"
                   : done
                     ? "border-emerald-400/60 bg-emerald-500/20 text-emerald-300"
                     : "border-blue-500/60 bg-blue-500/15 text-blue-200 hover:bg-blue-500/25",
               )}
             >
-              {done ? <Check className="h-5 w-5" strokeWidth={3} /> : quest.control.running ? <Pause className="h-5 w-5" strokeWidth={2.5} fill="currentColor" /> : <Play className="h-5 w-5 translate-x-px" strokeWidth={2.5} fill="currentColor" />}
+              {done ? <Check className="h-5 w-5" strokeWidth={3} /> : running ? <Pause className="h-5 w-5" strokeWidth={2.5} fill="currentColor" /> : <Play className="h-5 w-5 translate-x-px" strokeWidth={2.5} fill="currentColor" />}
             </motion.button>
           )}
         </div>
       </div>
 
-      {/* Progress bar */}
+      {/* Progress strip */}
       {quest.control.kind !== "checkbox" && (
-        <div className="mt-4 h-px overflow-hidden rounded-full bg-white/5">
+        <div className="mt-3 h-1 overflow-hidden rounded-full bg-white/5">
           <motion.div
             initial={false}
             animate={{ width: `${progress}%` }}
@@ -922,7 +866,6 @@ function QuestCard({
               "h-full rounded-full",
               done ? "bg-emerald-500" : quest.penalty ? "bg-gradient-to-r from-red-400 to-red-600" : "bg-gradient-to-r from-blue-500 to-purple-500",
             )}
-            style={{ height: "2px" }}
           />
         </div>
       )}
@@ -930,56 +873,8 @@ function QuestCard({
   );
 }
 
-function formatMmSs(sec: number) {
+function fmtMmSs(sec: number) {
   const m = Math.floor(sec / 60);
   const s = sec % 60;
   return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
-}
-
-/* ----------------------------------------------------------
- * Level up overlay
- * ---------------------------------------------------------- */
-
-function LevelUpOverlay({
-  level,
-  title,
-  onClose,
-}: {
-  level: number;
-  title: string;
-  onClose: () => void;
-}) {
-  return (
-    <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/90 backdrop-blur-md p-4"
-    >
-      <motion.div
-        initial={{ scale: 0.6, y: 20 }}
-        animate={{ scale: 1, y: 0 }}
-        exit={{ scale: 0.8, opacity: 0 }}
-        transition={{ type: "spring", stiffness: 240, damping: 18 }}
-        className="relative max-w-md w-full text-center"
-      >
-        <div className="font-mono text-xs tracking-[0.6em] text-blue-300/80">LEVEL UP</div>
-        <div className="text-mega text-[160px] text-white leading-none mt-2">Lv {level}</div>
-        <div className="font-mono text-sm tracking-[0.4em] uppercase text-blue-200 mt-2">{title}</div>
-        <div className="mx-auto mt-6 inline-flex items-center gap-2 rounded-full border border-blue-500/30 bg-blue-500/10 px-4 py-2 font-mono text-xs text-blue-100">
-          <Sparkles className="h-3 w-3" />
-          +5 stat points
-        </div>
-        <motion.button
-          type="button"
-          whileTap={{ scale: 0.95 }}
-          onClick={onClose}
-          data-cursor="hover"
-          className="block mx-auto mt-8 rounded-full border border-white/20 bg-white/5 px-8 py-3 font-mono text-xs tracking-[0.4em] uppercase text-white backdrop-blur transition-colors hover:bg-white/10"
-        >
-          Continue
-        </motion.button>
-      </motion.div>
-    </motion.div>
-  );
 }
