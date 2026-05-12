@@ -8,173 +8,289 @@ import type { StatKind } from "@/lib/types";
 
 export type SceneMode = "idle" | StatKind;
 
-/**
- * Real WebGL hero scene. A central deforming icosahedron, surrounded by
- * orbiting energy nodes, drifting sparkles, and a star field. The scene
- * morphs continuously between states — color, distortion amount,
- * rotation speed, and orbit pattern all transition smoothly when the
- * user switches sections.
- */
+/* ============================================================
+ * Live data-driven 3D scene.
+ *
+ *   - Central icosahedron = the player (core). Its size scales with XP
+ *     toward the next level. Its emissive intensity pulses on XP gain.
+ *   - 5 satellites orbit the core, one per stat. Each is a distinct
+ *     geometry colored by its stat. Their scale is driven by the stat
+ *     value. The active stat's satellite is also enlarged and brought
+ *     closer to camera.
+ *   - On quest completion, a burst of particles erupts from that stat's
+ *     satellite (driven by an incrementing `burstId` prop).
+ *   - The camera smoothly orbits to focus on the active stat (or pulls
+ *     back to a wide shot when mode is "idle").
+ *   - Streak count drives ambient sparkle density.
+ *
+ * The scene is therefore a live readout of the user's state, not a
+ * decorative loop.
+ * ============================================================ */
 
-const MODES: Record<
-  SceneMode,
-  { color: string; emissive: string; distort: number; speed: number; ringColor: string }
-> = {
-  idle: { color: "#3b82f6", emissive: "#1d4ed8", distort: 0.32, speed: 1.4, ringColor: "#60a5fa" },
-  STR: { color: "#f43f5e", emissive: "#9f1239", distort: 0.55, speed: 2.4, ringColor: "#fb7185" },
-  VIT: { color: "#10b981", emissive: "#065f46", distort: 0.42, speed: 1.8, ringColor: "#34d399" },
-  AGI: { color: "#f59e0b", emissive: "#92400e", distort: 0.6, speed: 3.0, ringColor: "#fbbf24" },
-  INT: { color: "#3b82f6", emissive: "#1e3a8a", distort: 0.28, speed: 1.0, ringColor: "#60a5fa" },
-  PER: { color: "#a855f7", emissive: "#6b21a8", distort: 0.5, speed: 2.0, ringColor: "#c084fc" },
+type StatStyle = {
+  color: string;
+  emissive: string;
+  ringColor: string;
+  angle: number;            // radians around the y-axis at rest
 };
+
+const STATS: Record<StatKind, StatStyle> = {
+  STR: { color: "#f43f5e", emissive: "#9f1239", ringColor: "#fb7185", angle: (Math.PI * 2 * 0) / 5 - Math.PI / 2 },
+  VIT: { color: "#10b981", emissive: "#065f46", ringColor: "#34d399", angle: (Math.PI * 2 * 1) / 5 - Math.PI / 2 },
+  AGI: { color: "#f59e0b", emissive: "#92400e", ringColor: "#fbbf24", angle: (Math.PI * 2 * 2) / 5 - Math.PI / 2 },
+  INT: { color: "#3b82f6", emissive: "#1e3a8a", ringColor: "#60a5fa", angle: (Math.PI * 2 * 3) / 5 - Math.PI / 2 },
+  PER: { color: "#a855f7", emissive: "#6b21a8", ringColor: "#c084fc", angle: (Math.PI * 2 * 4) / 5 - Math.PI / 2 },
+};
+
+const ORBIT_RADIUS = 2.3;
 
 function lerp(a: number, b: number, t: number) {
   return a + (b - a) * t;
 }
 
-/* ---------- Central morphing core ---------- */
-function Core({ mode }: { mode: SceneMode }) {
+/* ---------- Core ---------- */
+function Core({
+  xpRatio,
+  pulseTrigger,
+}: {
+  xpRatio: number; // 0..1 (progress to next level)
+  pulseTrigger: number;
+}) {
   const meshRef = useRef<THREE.Mesh>(null);
   const matRef = useRef<any>(null);
-  const target = MODES[mode];
-  const cur = useRef({ distort: target.distort, speed: target.speed });
-  const color = useRef(new THREE.Color(target.color));
-  const emissive = useRef(new THREE.Color(target.emissive));
-  const targetColor = useMemo(() => new THREE.Color(target.color), [mode]);
-  const targetEmissive = useMemo(() => new THREE.Color(target.emissive), [mode]);
+  const pulse = useRef(0);
+  const lastTrig = useRef(pulseTrigger);
 
   useFrame((state, delta) => {
-    cur.current.distort = lerp(cur.current.distort, target.distort, Math.min(1, delta * 2.5));
-    cur.current.speed = lerp(cur.current.speed, target.speed, Math.min(1, delta * 2.5));
-    color.current.lerp(targetColor, Math.min(1, delta * 2.5));
-    emissive.current.lerp(targetEmissive, Math.min(1, delta * 2.5));
-
-    if (matRef.current) {
-      matRef.current.distort = cur.current.distort;
-      matRef.current.speed = cur.current.speed;
-      matRef.current.color = color.current;
-      matRef.current.emissive = emissive.current;
+    if (pulseTrigger !== lastTrig.current) {
+      pulse.current = 1;
+      lastTrig.current = pulseTrigger;
     }
+    pulse.current = Math.max(0, pulse.current - delta * 2);
+
     if (meshRef.current) {
-      meshRef.current.rotation.y += delta * 0.25 * cur.current.speed;
+      const target = 0.85 + xpRatio * 0.35 + pulse.current * 0.35;
+      meshRef.current.scale.setScalar(lerp(meshRef.current.scale.x, target, Math.min(1, delta * 6)));
+      meshRef.current.rotation.y += delta * 0.2;
       meshRef.current.rotation.x = Math.sin(state.clock.elapsedTime * 0.4) * 0.15;
+    }
+    if (matRef.current) {
+      matRef.current.emissiveIntensity = 0.6 + pulse.current * 1.6;
+      matRef.current.distort = 0.32 + pulse.current * 0.3;
     }
   });
 
   return (
-    <Float speed={1.4} rotationIntensity={0.4} floatIntensity={0.5}>
-      <mesh ref={meshRef} scale={1.2}>
-        <icosahedronGeometry args={[1, 12]} />
+    <Float speed={1} rotationIntensity={0.3} floatIntensity={0.4}>
+      <mesh ref={meshRef}>
+        <icosahedronGeometry args={[1, 8]} />
         <MeshDistortMaterial
           ref={matRef}
-          color={target.color}
-          emissive={target.emissive}
+          color="#1e3a8a"
+          emissive="#3b82f6"
           emissiveIntensity={0.6}
-          roughness={0.15}
-          metalness={0.55}
-          distort={target.distort}
-          speed={target.speed}
+          roughness={0.18}
+          metalness={0.6}
+          distort={0.32}
+          speed={1.6}
         />
       </mesh>
     </Float>
   );
 }
 
-/* ---------- Orbiting energy nodes ---------- */
-function Orbits({ mode }: { mode: SceneMode }) {
-  const target = MODES[mode];
-  const groupA = useRef<THREE.Group>(null);
-  const groupB = useRef<THREE.Group>(null);
-  const groupC = useRef<THREE.Group>(null);
+/* ---------- A single stat satellite ---------- */
+function Satellite({
+  stat,
+  value,        // 1..60+ approx
+  active,       // currently focused
+  hovered,      // hovered via UI
+  burstId,      // increments to trigger burst
+}: {
+  stat: StatKind;
+  value: number;
+  active: boolean;
+  hovered: boolean;
+  burstId: number;
+}) {
+  const style = STATS[stat];
+  const group = useRef<THREE.Group>(null);
+  const mesh = useRef<THREE.Mesh>(null);
+  const ring = useRef<THREE.Mesh>(null);
+  const burstGroup = useRef<THREE.Group>(null);
+  const burstTime = useRef(0);
+  const lastTrig = useRef(burstId);
 
   useFrame((state, delta) => {
-    const s = target.speed;
-    if (groupA.current) groupA.current.rotation.y += delta * 0.4 * s;
-    if (groupB.current) {
-      groupB.current.rotation.x += delta * 0.3 * s;
-      groupB.current.rotation.z += delta * 0.15 * s;
+    // Orbit position
+    const t = state.clock.elapsedTime * 0.12 + style.angle;
+    if (group.current) {
+      const r = ORBIT_RADIUS + (active ? -0.4 : 0);
+      group.current.position.x = Math.cos(t) * r;
+      group.current.position.z = Math.sin(t) * r;
+      group.current.position.y = Math.sin(state.clock.elapsedTime * 0.6 + style.angle) * 0.15;
     }
-    if (groupC.current) {
-      groupC.current.rotation.z += delta * 0.5 * s;
-      groupC.current.rotation.y -= delta * 0.2 * s;
+    if (mesh.current) {
+      mesh.current.rotation.x += delta * (active ? 1.5 : 0.6);
+      mesh.current.rotation.y += delta * (active ? 1.2 : 0.4);
+      const sBase = 0.16 + (value / 60) * 0.18;
+      const sTarget = sBase * (active ? 1.6 : hovered ? 1.3 : 1);
+      mesh.current.scale.setScalar(lerp(mesh.current.scale.x, sTarget, Math.min(1, delta * 6)));
+    }
+    if (ring.current) {
+      ring.current.rotation.z += delta * 0.6;
+      const mat = ring.current.material as THREE.MeshBasicMaterial;
+      mat.opacity = lerp(mat.opacity ?? 0, active ? 0.7 : hovered ? 0.5 : 0.25, Math.min(1, delta * 6));
+    }
+
+    // Burst
+    if (burstId !== lastTrig.current) {
+      burstTime.current = 1;
+      lastTrig.current = burstId;
+    }
+    burstTime.current = Math.max(0, burstTime.current - delta * 1.4);
+    if (burstGroup.current) {
+      const op = burstTime.current;
+      burstGroup.current.children.forEach((c, i) => {
+        const angle = (i / 12) * Math.PI * 2;
+        const dist = (1 - burstTime.current) * 0.9;
+        c.position.x = Math.cos(angle) * dist;
+        c.position.y = Math.sin(angle) * dist;
+        c.position.z = (Math.cos(angle * 2) - 0.5) * dist * 0.5;
+        const m = (c as THREE.Mesh).material as THREE.MeshBasicMaterial;
+        if (m) m.opacity = op;
+      });
     }
   });
 
-  const nodeMat = (
-    <meshStandardMaterial
-      color={target.ringColor}
-      emissive={target.ringColor}
-      emissiveIntensity={1.4}
-      toneMapped={false}
-    />
-  );
+  // Pick geometry per stat
+  const geometry = useMemo(() => {
+    switch (stat) {
+      case "STR":
+        return <boxGeometry args={[1, 1, 1]} />;
+      case "VIT":
+        return <torusKnotGeometry args={[0.7, 0.22, 80, 14]} />;
+      case "AGI":
+        return <tetrahedronGeometry args={[1, 0]} />;
+      case "INT":
+        return <octahedronGeometry args={[1, 0]} />;
+      case "PER":
+        return <torusGeometry args={[0.8, 0.18, 16, 64]} />;
+    }
+  }, [stat]);
 
   return (
-    <>
-      {/* Orbit ring A */}
-      <group ref={groupA}>
-        <mesh rotation={[Math.PI / 2, 0, 0]}>
-          <torusGeometry args={[2.1, 0.012, 8, 96]} />
-          <meshBasicMaterial color={target.ringColor} transparent opacity={0.35} />
-        </mesh>
-        <mesh position={[2.1, 0, 0]} scale={0.06}>
-          <sphereGeometry args={[1, 16, 16]} />
-          {nodeMat}
-        </mesh>
-        <mesh position={[-2.1, 0, 0]} scale={0.04}>
-          <sphereGeometry args={[1, 16, 16]} />
-          {nodeMat}
-        </mesh>
+    <group ref={group}>
+      {/* Halo ring around satellite */}
+      <mesh ref={ring}>
+        <ringGeometry args={[0.35, 0.42, 32]} />
+        <meshBasicMaterial
+          color={style.ringColor}
+          transparent
+          opacity={0.25}
+          side={THREE.DoubleSide}
+        />
+      </mesh>
+
+      {/* Satellite mesh */}
+      <mesh ref={mesh}>
+        {geometry}
+        <meshStandardMaterial
+          color={style.color}
+          emissive={style.emissive}
+          emissiveIntensity={active ? 1.6 : hovered ? 1.2 : 0.7}
+          roughness={0.3}
+          metalness={0.6}
+          toneMapped={false}
+        />
+      </mesh>
+
+      {/* Burst particles */}
+      <group ref={burstGroup}>
+        {Array.from({ length: 12 }).map((_, i) => (
+          <mesh key={i} scale={0.06}>
+            <sphereGeometry args={[1, 8, 8]} />
+            <meshBasicMaterial
+              color={style.ringColor}
+              transparent
+              opacity={0}
+              toneMapped={false}
+            />
+          </mesh>
+        ))}
       </group>
-      {/* Orbit ring B */}
-      <group ref={groupB} rotation={[Math.PI / 3, 0, Math.PI / 6]}>
-        <mesh rotation={[Math.PI / 2, 0, 0]}>
-          <torusGeometry args={[2.6, 0.008, 8, 96]} />
-          <meshBasicMaterial color={target.ringColor} transparent opacity={0.22} />
-        </mesh>
-        <mesh position={[2.6, 0, 0]} scale={0.05}>
-          <sphereGeometry args={[1, 16, 16]} />
-          {nodeMat}
-        </mesh>
-      </group>
-      {/* Orbit ring C */}
-      <group ref={groupC} rotation={[Math.PI / 5, Math.PI / 4, 0]}>
-        <mesh rotation={[Math.PI / 2, 0, 0]}>
-          <torusGeometry args={[3.0, 0.006, 8, 96]} />
-          <meshBasicMaterial color={target.ringColor} transparent opacity={0.16} />
-        </mesh>
-        <mesh position={[3.0, 0, 0]} scale={0.04}>
-          <sphereGeometry args={[1, 16, 16]} />
-          {nodeMat}
-        </mesh>
-      </group>
-    </>
+    </group>
   );
 }
 
-/* ---------- Background pulse rings (flat) ---------- */
-function PulseRing({ mode }: { mode: SceneMode }) {
-  const ringRef = useRef<THREE.Mesh>(null);
-  const target = MODES[mode];
-  useFrame((state) => {
-    const t = (state.clock.elapsedTime * 0.5) % 1;
-    if (ringRef.current) {
-      const s = 1.5 + t * 2.5;
-      ringRef.current.scale.set(s, s, s);
-      const mat = ringRef.current.material as THREE.MeshBasicMaterial;
-      mat.opacity = (1 - t) * 0.3;
+/* ---------- Energy stream from a focused satellite to the core ---------- */
+function ActiveBeam({ mode }: { mode: SceneMode }) {
+  const ref = useRef<THREE.Mesh>(null);
+  const targetOpacity = mode === "idle" ? 0 : 0.5;
+  useFrame((state, delta) => {
+    if (!ref.current) return;
+    const mat = ref.current.material as THREE.MeshBasicMaterial;
+    mat.opacity = lerp(mat.opacity ?? 0, targetOpacity, Math.min(1, delta * 4));
+    if (mode !== "idle") {
+      const a = STATS[mode].angle + state.clock.elapsedTime * 0.12;
+      const x = Math.cos(a) * ORBIT_RADIUS;
+      const z = Math.sin(a) * ORBIT_RADIUS;
+      ref.current.position.set(x / 2, 0, z / 2);
+      ref.current.lookAt(0, 0, 0);
+      ref.current.rotateX(Math.PI / 2);
+      ref.current.scale.set(0.04, Math.sqrt(x * x + z * z), 0.04);
+      const color = new THREE.Color(STATS[mode].ringColor);
+      mat.color = color;
     }
   });
   return (
-    <mesh ref={ringRef} position={[0, 0, -1]}>
-      <ringGeometry args={[1, 1.04, 64]} />
-      <meshBasicMaterial color={target.ringColor} transparent opacity={0.2} side={THREE.DoubleSide} />
+    <mesh ref={ref}>
+      <cylinderGeometry args={[1, 1, 1, 8, 1]} />
+      <meshBasicMaterial color="#60a5fa" transparent opacity={0} toneMapped={false} />
     </mesh>
   );
 }
 
+/* ---------- Camera dolly ---------- */
+function CameraRig({ mode }: { mode: SceneMode }) {
+  useFrame((state, delta) => {
+    let tx = 0, ty = 0.4, tz = 5.5;
+    if (mode !== "idle") {
+      const a = STATS[mode].angle + state.clock.elapsedTime * 0.12;
+      tx = Math.cos(a) * 2.2;
+      tz = 4.2 + Math.sin(a) * 0.4;
+      ty = 0.5;
+    }
+    state.camera.position.x = lerp(state.camera.position.x, tx, Math.min(1, delta * 1.8));
+    state.camera.position.y = lerp(state.camera.position.y, ty, Math.min(1, delta * 1.8));
+    state.camera.position.z = lerp(state.camera.position.z, tz, Math.min(1, delta * 1.8));
+    state.camera.lookAt(0, 0, 0);
+  });
+  return null;
+}
+
 /* ---------- Scene wrapper ---------- */
-export function HeroScene({ mode, height = 520 }: { mode: SceneMode; height?: number }) {
+export function HeroScene({
+  mode,
+  hoveredStat,
+  stats,
+  burstStat,
+  burstId,
+  pulseTrigger,
+  xpRatio,
+  streak,
+  height = 480,
+}: {
+  mode: SceneMode;
+  hoveredStat: StatKind | null;
+  stats: Record<StatKind, number>;
+  burstStat: StatKind | null;
+  burstId: number;
+  pulseTrigger: number;
+  xpRatio: number; // 0..1
+  streak: number;
+  height?: number;
+}) {
   const [supported, setSupported] = useState(true);
   useEffect(() => {
     try {
@@ -188,40 +304,44 @@ export function HeroScene({ mode, height = 520 }: { mode: SceneMode; height?: nu
 
   if (!supported) {
     return (
-      <div
-        className="grid place-items-center rounded-3xl border border-white/10 bg-slate-950/50"
-        style={{ height }}
-      >
+      <div className="grid place-items-center rounded-3xl border border-white/10 bg-slate-950/50" style={{ height }}>
         <p className="text-slate-500 text-sm">WebGL not supported.</p>
       </div>
     );
   }
 
-  const sparkleColor = MODES[mode].ringColor;
+  const accent = mode === "idle" ? "#60a5fa" : STATS[mode].ringColor;
+  const sparkleCount = Math.min(180, 40 + streak * 2);
 
   return (
-    <div
-      className="relative overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-slate-900/40 to-slate-950"
-      style={{ height }}
-    >
-      <Canvas
-        camera={{ position: [0, 0, 5.5], fov: 45 }}
-        dpr={[1, 2]}
-        gl={{ antialias: true, alpha: true }}
-      >
+    <div className="relative overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-slate-900/40 to-slate-950" style={{ height }}>
+      <Canvas camera={{ position: [0, 0.4, 5.5], fov: 45 }} dpr={[1, 2]} gl={{ antialias: true, alpha: true }}>
         <color attach="background" args={["#020617"]} />
         <fog attach="fog" args={["#020617", 6, 14]} />
 
         <ambientLight intensity={0.4} />
-        <pointLight position={[5, 5, 5]} intensity={2} color={MODES[mode].color} />
-        <pointLight position={[-5, -5, -5]} intensity={1} color={MODES[mode].ringColor} />
-        <directionalLight position={[0, 5, 2]} intensity={0.6} />
+        <pointLight position={[5, 5, 5]} intensity={1.8} color={accent} />
+        <pointLight position={[-5, -5, -5]} intensity={0.8} color="#a855f7" />
+        <directionalLight position={[0, 5, 2]} intensity={0.5} />
 
         <Suspense fallback={null}>
-          <Core mode={mode} />
-          <Orbits mode={mode} />
-          <PulseRing mode={mode} />
-          <Sparkles count={80} scale={6} size={3} speed={0.4} color={sparkleColor} opacity={0.6} />
+          <Core xpRatio={xpRatio} pulseTrigger={pulseTrigger} />
+
+          {(Object.keys(STATS) as StatKind[]).map((s) => (
+            <Satellite
+              key={s}
+              stat={s}
+              value={stats[s]}
+              active={mode === s}
+              hovered={hoveredStat === s}
+              burstId={burstStat === s ? burstId : 0}
+            />
+          ))}
+
+          <ActiveBeam mode={mode} />
+          <CameraRig mode={mode} />
+
+          <Sparkles count={sparkleCount} scale={6} size={2.5} speed={0.35} color={accent} opacity={0.55} />
           <Stars radius={50} depth={20} count={1200} factor={3} fade speed={0.6} />
           <Environment preset="night" />
         </Suspense>
@@ -233,17 +353,19 @@ export function HeroScene({ mode, height = 520 }: { mode: SceneMode; height?: nu
       <Bracket pos="bl" />
       <Bracket pos="br" />
 
-      {/* Scan line sweep */}
+      {/* Scan line */}
       <div
         aria-hidden
         className="pointer-events-none absolute inset-x-0 h-px"
-        style={{
-          top: "50%",
-          background: `linear-gradient(90deg, transparent, ${MODES[mode].ringColor}80, transparent)`,
-          animation: "scan 5s linear infinite",
-        }}
+        style={{ top: "50%", background: `linear-gradient(90deg, transparent, ${accent}80, transparent)`, animation: "scan 5s linear infinite" }}
       />
       <style>{`@keyframes scan { 0% { top: -2%; } 100% { top: 102%; } }`}</style>
+
+      {/* Live status corner */}
+      <div className="pointer-events-none absolute left-3 bottom-3 flex items-center gap-1.5 rounded-full bg-slate-950/70 px-2 py-1 backdrop-blur">
+        <span className="block h-1.5 w-1.5 rounded-full animate-pulse" style={{ backgroundColor: accent }} />
+        <span className="font-mono text-[9px] tracking-[0.3em] uppercase text-slate-300">LIVE · WebGL</span>
+      </div>
     </div>
   );
 }

@@ -105,6 +105,10 @@ export default function Dashboard() {
   const [quests, setQuests] = useState<Quest[]>(INITIAL_QUESTS);
   const [player, setPlayer] = useState(INITIAL_PLAYER);
   const [activeStatFilter, setActiveStatFilter] = useState<Stat | null>(null);
+  const [hoveredStat, setHoveredStat] = useState<Stat | null>(null);
+  const [burstStat, setBurstStat] = useState<Stat | null>(null);
+  const [burstId, setBurstId] = useState(0);
+  const [pulseTrigger, setPulseTrigger] = useState(0);
 
   // Timer tick
   useEffect(() => {
@@ -179,7 +183,13 @@ export default function Dashboard() {
       }
       return { ...p, level, xpInLevel, xpToNext, title };
     });
+    setPulseTrigger((n) => n + 1);
     if (typeof window !== "undefined" && "vibrate" in navigator) navigator.vibrate?.(20);
+  }
+
+  function fireBurst(stat: Stat) {
+    setBurstStat(stat);
+    setBurstId((n) => n + 1);
   }
 
   const completeQuestRef = useRef<HTMLDivElement | null>(null);
@@ -192,6 +202,7 @@ export default function Dashboard() {
         const newDone = !q.control.done;
         if (newDone) {
           fireXp(q.baseXp);
+          fireBurst(q.stat);
           if (card) celebrateAt(card, STAT_HEX[q.stat]);
         }
         return { ...q, control: { kind: "checkbox", done: newDone } };
@@ -209,6 +220,7 @@ export default function Dashboard() {
         const nowDone = actual >= q.control.target;
         if (!wasDone && nowDone) {
           fireXp(q.baseXp);
+          fireBurst(q.stat);
           if (card) celebrateAt(card, STAT_HEX[q.stat]);
         }
         return { ...q, control: { ...q.control, actual } };
@@ -350,7 +362,17 @@ export default function Dashboard() {
           {/* 3D Hero scene — centerpiece */}
           <TiltCard className="col-span-12 lg:col-span-7 rounded-3xl" intensity={4}>
             <div className="relative overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-slate-900/80 to-slate-950 backdrop-blur-xl">
-              <HeroScene mode={activeStatFilter ?? "idle"} height={420} />
+              <HeroScene
+                mode={activeStatFilter ?? "idle"}
+                hoveredStat={hoveredStat}
+                stats={player.stats}
+                burstStat={burstStat}
+                burstId={burstId}
+                pulseTrigger={pulseTrigger}
+                xpRatio={player.xpInLevel / player.xpToNext}
+                streak={player.streak}
+                height={420}
+              />
               {/* Overlay readout */}
               <div className="pointer-events-none absolute inset-x-0 top-0 flex items-start justify-between p-4 md:p-5">
                 <div>
@@ -465,6 +487,7 @@ export default function Dashboard() {
                     value={player.stats[s]}
                     active={activeStatFilter === s}
                     onClick={() => setActiveStatFilter((p) => (p === s ? null : s))}
+                    onHover={(h) => setHoveredStat(h ? s : null)}
                     delay={0.05 + idx * 0.06}
                   />
                 ))}
@@ -547,6 +570,7 @@ export default function Dashboard() {
                   onCheck={(e) => toggleCheckbox(q.id, e)}
                   onBump={(d, e) => bumpCount(q.id, d, e)}
                   onTimer={() => toggleTimer(q.id)}
+                  onHover={(h) => setHoveredStat(h ? q.stat : null)}
                 />
               ))}
             </AnimatePresence>
@@ -676,12 +700,14 @@ function StatTile({
   value,
   active,
   onClick,
+  onHover,
   delay,
 }: {
   stat: Stat;
   value: number;
   active: boolean;
   onClick: () => void;
+  onHover: (hovering: boolean) => void;
   delay: number;
 }) {
   const meta = STAT_META[stat];
@@ -689,6 +715,8 @@ function StatTile({
     <motion.button
       type="button"
       onClick={onClick}
+      onMouseEnter={() => onHover(true)}
+      onMouseLeave={() => onHover(false)}
       data-cursor="hover"
       initial={{ opacity: 0, y: 12 }}
       animate={{ opacity: 1, y: 0 }}
@@ -716,12 +744,14 @@ function QuestCard({
   onCheck,
   onBump,
   onTimer,
+  onHover,
 }: {
   quest: Quest;
   index: number;
   onCheck: (e: React.MouseEvent) => void;
   onBump: (delta: number, e: React.MouseEvent) => void;
   onTimer: () => void;
+  onHover: (hovering: boolean) => void;
 }) {
   const meta = STAT_META[quest.stat];
   const done = isQuestDone(quest.control);
@@ -745,6 +775,9 @@ function QuestCard({
       animate={{ opacity: done ? 0.6 : 1, y: 0 }}
       exit={{ opacity: 0, y: -10 }}
       transition={{ duration: 0.45, delay: index * 0.04, ease: [0.22, 1, 0.36, 1] }}
+      onMouseEnter={() => onHover(true)}
+      onMouseLeave={() => onHover(false)}
+      onTouchStart={() => onHover(true)}
       className={cn(
         "group relative overflow-hidden rounded-2xl border bg-white/[0.03] px-4 py-4 backdrop-blur-sm transition-colors",
         done && "border-emerald-500/30 bg-emerald-950/15",
