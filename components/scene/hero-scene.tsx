@@ -2,98 +2,312 @@
 
 import { Suspense, useState, useEffect, useRef, useMemo } from "react";
 import { Canvas, useFrame } from "@react-three/fiber";
-import { useGLTF, useAnimations, Sparkles, Stars, Environment } from "@react-three/drei";
+import { Sparkles, Stars } from "@react-three/drei";
 import * as THREE from "three";
 import type { StatKind } from "@/lib/types";
 
-useGLTF.preload("/models/soldier.glb");
-
 export type SceneMode = "idle" | StatKind;
 
-const STAT_COLOR: Record<StatKind, string> = {
+/* ============================================================
+ * Particle human — a constellation of glowing points arranged in a
+ * human silhouette. Each particle belongs to a body region (head,
+ * torso, arms, legs, pelvis). The active stat brightens its region
+ * and shifts those particles toward the stat color.
+ *
+ *   INT → head region (cranium)
+ *   STR → torso + arms + legs (the working body)
+ *   DIS → entire figure (posture / composure)
+ * ============================================================ */
+
+const STAT_COLOR: Record<StatKind, [number, number, number]> = {
+  INT: [0.38, 0.65, 1.0],     // blue
+  STR: [1.0, 0.43, 0.52],     // rose
+  DIS: [0.75, 0.51, 1.0],     // purple
+};
+
+const STAT_HEX: Record<StatKind, string> = {
   INT: "#60a5fa",
   STR: "#fb7185",
   DIS: "#c084fc",
 };
 
-const STAT_EMISSIVE: Record<StatKind, string> = {
-  INT: "#1e3a8a",
-  STR: "#7f1d1d",
-  DIS: "#581c87",
+type Region = "head" | "torso" | "l_arm" | "r_arm" | "pelvis" | "l_leg" | "r_leg";
+const ALL_REGIONS: Region[] = ["head", "torso", "l_arm", "r_arm", "pelvis", "l_leg", "r_leg"];
+
+const REGION_BASE: Record<Region, [number, number, number]> = {
+  head:   [0.55, 0.78, 1.0],
+  torso:  [0.32, 0.6, 1.0],
+  l_arm:  [0.38, 0.62, 1.0],
+  r_arm:  [0.38, 0.62, 1.0],
+  pelvis: [0.3, 0.58, 1.0],
+  l_leg:  [0.35, 0.6, 1.0],
+  r_leg:  [0.35, 0.6, 1.0],
 };
 
-// Camera positions per scroll section. Soldier model is ~2u tall, root at y=0.
+const STAT_REGIONS: Record<StatKind, Region[]> = {
+  INT: ["head"],
+  STR: ["torso", "l_arm", "r_arm", "l_leg", "r_leg", "pelvis"],
+  DIS: ["head", "torso", "l_arm", "r_arm", "pelvis", "l_leg", "r_leg"],
+};
+
 const CAMERA: Record<SceneMode, { pos: [number, number, number]; look: [number, number, number]; fov: number }> = {
-  idle: { pos: [0, 1.1, 3.4], look: [0, 1.1, 0], fov: 38 },     // wide full body
-  INT:  { pos: [0.6, 1.85, 1.4], look: [0, 1.85, 0], fov: 28 }, // head close-up
-  STR:  { pos: [0, 1.35, 2.0], look: [0, 1.2, 0], fov: 36 },    // torso + arms
-  DIS:  { pos: [1.8, 1.0, 2.4], look: [0, 1.0, 0], fov: 38 },   // angled side view
+  idle: { pos: [0, 1.0, 3.3], look: [0, 1.0, 0], fov: 38 },
+  INT:  { pos: [0.5, 1.75, 1.3], look: [0, 1.75, 0], fov: 28 },
+  STR:  { pos: [0, 1.0, 2.1], look: [0, 1.0, 0], fov: 38 },
+  DIS:  { pos: [1.7, 0.9, 2.3], look: [0, 0.9, 0], fov: 36 },
 };
 
 function lerp(a: number, b: number, t: number) {
   return a + (b - a) * t;
 }
 
-/* ---------- The character ---------- */
-function Character({ mode, pulseTrigger }: { mode: SceneMode; pulseTrigger: number }) {
+/* ---------- Body sampling ---------- */
+
+function randomInSphere(cx: number, cy: number, cz: number, r: number): [number, number, number] {
+  // rejection sampling
+  for (;;) {
+    const x = (Math.random() * 2 - 1) * r;
+    const y = (Math.random() * 2 - 1) * r;
+    const z = (Math.random() * 2 - 1) * r;
+    if (x * x + y * y + z * z <= r * r) return [cx + x, cy + y, cz + z];
+  }
+}
+
+function randomInEllipsoid(
+  cx: number, cy: number, cz: number,
+  rx: number, ry: number, rz: number,
+): [number, number, number] {
+  for (;;) {
+    const x = (Math.random() * 2 - 1);
+    const y = (Math.random() * 2 - 1);
+    const z = (Math.random() * 2 - 1);
+    if (x * x + y * y + z * z <= 1) return [cx + x * rx, cy + y * ry, cz + z * rz];
+  }
+}
+
+function randomInCapsule(
+  ax: number, ay: number, az: number,
+  bx: number, by: number, bz: number,
+  radius: number,
+): [number, number, number] {
+  // pick a point along the axis A→B, then offset perpendicularly within `radius`
+  const t = Math.random();
+  const cx = ax + (bx - ax) * t;
+  const cy = ay + (by - ay) * t;
+  const cz = az + (bz - az) * t;
+  // random in disc, projected slightly into 3D
+  const theta = Math.random() * Math.PI * 2;
+  const r = Math.sqrt(Math.random()) * radius;
+  return [cx + Math.cos(theta) * r, cy, cz + Math.sin(theta) * r];
+}
+
+interface Particle {
+  x: number; y: number; z: number;       // base position
+  region: Region;
+  size: number;
+  phase: number; // for individual drift
+}
+
+function buildBodyParticles(): Particle[] {
+  const ps: Particle[] = [];
+
+  // Head — sphere
+  for (let i = 0; i < 550; i++) {
+    const [x, y, z] = randomInSphere(0, 1.78, 0, 0.22);
+    ps.push({ x, y, z, region: "head", size: 0.018 + Math.random() * 0.018, phase: Math.random() * Math.PI * 2 });
+  }
+
+  // Torso — elongated ellipsoid (shoulders wide, narrowing at waist)
+  for (let i = 0; i < 1100; i++) {
+    // taper from shoulders to waist
+    const tY = Math.random();
+    const yPos = 1.55 - tY * 0.7; // 1.55 → 0.85
+    const widthScale = lerp(1.0, 0.72, tY); // taper down
+    const rx = 0.32 * widthScale;
+    const ry = 0.04; // thin slab in Y
+    const rz = 0.15;
+    const [x, , z] = randomInEllipsoid(0, yPos, 0, rx, ry, rz);
+    ps.push({ x, y: yPos + (Math.random() - 0.5) * 0.08, z, region: "torso", size: 0.018 + Math.random() * 0.018, phase: Math.random() * Math.PI * 2 });
+  }
+
+  // Pelvis
+  for (let i = 0; i < 320; i++) {
+    const [x, y, z] = randomInEllipsoid(0, 0.78, 0, 0.26, 0.08, 0.14);
+    ps.push({ x, y, z, region: "pelvis", size: 0.018 + Math.random() * 0.016, phase: Math.random() * Math.PI * 2 });
+  }
+
+  // Left arm — capsule from shoulder down to hand
+  for (let i = 0; i < 420; i++) {
+    const [x, y, z] = randomInCapsule(-0.35, 1.5, 0.02, -0.42, 0.6, 0.02, 0.08);
+    ps.push({ x, y, z, region: "l_arm", size: 0.016 + Math.random() * 0.014, phase: Math.random() * Math.PI * 2 });
+  }
+  // Right arm
+  for (let i = 0; i < 420; i++) {
+    const [x, y, z] = randomInCapsule(0.35, 1.5, 0.02, 0.42, 0.6, 0.02, 0.08);
+    ps.push({ x, y, z, region: "r_arm", size: 0.016 + Math.random() * 0.014, phase: Math.random() * Math.PI * 2 });
+  }
+  // Hands — small spheres at the ends
+  for (let i = 0; i < 80; i++) {
+    const [x, y, z] = randomInSphere(-0.42, 0.6, 0.02, 0.07);
+    ps.push({ x, y, z, region: "l_arm", size: 0.014, phase: Math.random() * Math.PI * 2 });
+  }
+  for (let i = 0; i < 80; i++) {
+    const [x, y, z] = randomInSphere(0.42, 0.6, 0.02, 0.07);
+    ps.push({ x, y, z, region: "r_arm", size: 0.014, phase: Math.random() * Math.PI * 2 });
+  }
+
+  // Legs — capsules from pelvis down to feet
+  for (let i = 0; i < 520; i++) {
+    const [x, y, z] = randomInCapsule(-0.13, 0.68, 0, -0.13, -0.5, 0, 0.1);
+    ps.push({ x, y, z, region: "l_leg", size: 0.018 + Math.random() * 0.014, phase: Math.random() * Math.PI * 2 });
+  }
+  for (let i = 0; i < 520; i++) {
+    const [x, y, z] = randomInCapsule(0.13, 0.68, 0, 0.13, -0.5, 0, 0.1);
+    ps.push({ x, y, z, region: "r_leg", size: 0.018 + Math.random() * 0.014, phase: Math.random() * Math.PI * 2 });
+  }
+  // Feet — small clusters at the bottom
+  for (let i = 0; i < 60; i++) {
+    const [x, y, z] = randomInEllipsoid(-0.13, -0.52, 0.06, 0.08, 0.04, 0.14);
+    ps.push({ x, y, z, region: "l_leg", size: 0.016, phase: Math.random() * Math.PI * 2 });
+  }
+  for (let i = 0; i < 60; i++) {
+    const [x, y, z] = randomInEllipsoid(0.13, -0.52, 0.06, 0.08, 0.04, 0.14);
+    ps.push({ x, y, z, region: "r_leg", size: 0.016, phase: Math.random() * Math.PI * 2 });
+  }
+
+  return ps;
+}
+
+/* ---------- Points renderer ---------- */
+function ParticleHuman({ mode, pulseTrigger }: { mode: SceneMode; pulseTrigger: number }) {
+  const pointsRef = useRef<THREE.Points>(null);
   const groupRef = useRef<THREE.Group>(null);
-  const { scene, animations } = useGLTF("/models/soldier.glb");
-  const { actions, names } = useAnimations(animations, groupRef);
   const pulse = useRef(0);
   const lastPulse = useRef(pulseTrigger);
+  const intensity = useRef(0);
 
-  // Play idle animation
-  useEffect(() => {
-    const idleName = names.find((n) => n.toLowerCase().includes("idle")) ?? names[0];
-    if (idleName && actions[idleName]) {
-      actions[idleName].reset().fadeIn(0.4).play();
-    }
-    return () => {
-      Object.values(actions).forEach((a) => a?.fadeOut(0.3));
-    };
-  }, [actions, names]);
+  const particles = useMemo(() => buildBodyParticles(), []);
 
-  // Tint character materials based on active stat
+  const { posAttr, colorAttr, sizeAttr, basePos } = useMemo(() => {
+    const n = particles.length;
+    const pos = new Float32Array(n * 3);
+    const col = new Float32Array(n * 3);
+    const sz = new Float32Array(n);
+    const base = new Float32Array(n * 3);
+    particles.forEach((p, i) => {
+      pos[i * 3] = base[i * 3] = p.x;
+      pos[i * 3 + 1] = base[i * 3 + 1] = p.y;
+      pos[i * 3 + 2] = base[i * 3 + 2] = p.z;
+      const c = REGION_BASE[p.region];
+      col[i * 3] = c[0];
+      col[i * 3 + 1] = c[1];
+      col[i * 3 + 2] = c[2];
+      sz[i] = p.size;
+    });
+    return { posAttr: pos, colorAttr: col, sizeAttr: sz, basePos: base };
+  }, [particles]);
+
+  // Update colors when mode changes
   useEffect(() => {
-    const targetColor = new THREE.Color(mode === "idle" ? "#ffffff" : STAT_COLOR[mode]);
-    const targetEmissive = new THREE.Color(mode === "idle" ? "#000000" : STAT_EMISSIVE[mode]);
-    const intensity = mode === "idle" ? 0 : 0.35;
-    scene.traverse((child) => {
-      const m = (child as THREE.Mesh).material as THREE.MeshStandardMaterial | undefined;
-      if (m && "emissive" in m) {
-        m.emissive = targetEmissive;
-        m.emissiveIntensity = intensity;
+    if (!pointsRef.current) return;
+    const colorBuf = pointsRef.current.geometry.attributes.color as THREE.BufferAttribute;
+    const arr = colorBuf.array as Float32Array;
+    const activeRegions = mode === "idle" ? null : STAT_REGIONS[mode];
+    const activeColor = mode === "idle" ? null : STAT_COLOR[mode];
+
+    particles.forEach((p, i) => {
+      const base = REGION_BASE[p.region];
+      if (activeRegions && activeColor && activeRegions.includes(p.region)) {
+        // brighten + shift toward stat color
+        arr[i * 3] = activeColor[0];
+        arr[i * 3 + 1] = activeColor[1];
+        arr[i * 3 + 2] = activeColor[2];
+      } else {
+        // dim slightly when not active
+        const dim = mode === "idle" ? 1 : 0.45;
+        arr[i * 3] = base[0] * dim;
+        arr[i * 3 + 1] = base[1] * dim;
+        arr[i * 3 + 2] = base[2] * dim;
       }
     });
-  }, [mode, scene]);
+    colorBuf.needsUpdate = true;
+  }, [mode, particles]);
 
-  // Optimize: enable shadow casting on character meshes
-  useEffect(() => {
-    scene.traverse((child) => {
-      const c = child as THREE.Mesh;
-      if (c.isMesh) {
-        c.castShadow = true;
-        c.receiveShadow = true;
-      }
-    });
-  }, [scene]);
-
-  // Pulse on XP gain
-  useFrame((_, delta) => {
+  useFrame((state, delta) => {
+    // Pulse
     if (pulseTrigger !== lastPulse.current) {
       pulse.current = 1;
       lastPulse.current = pulseTrigger;
     }
-    pulse.current = Math.max(0, pulse.current - delta * 2);
-    if (groupRef.current) {
-      const s = 1 + pulse.current * 0.04;
-      groupRef.current.scale.setScalar(lerp(groupRef.current.scale.x, s, Math.min(1, delta * 8)));
+    pulse.current = Math.max(0, pulse.current - delta * 1.8);
+
+    // Drift particles slightly each frame (subtle floating)
+    if (pointsRef.current) {
+      const posBuf = pointsRef.current.geometry.attributes.position as THREE.BufferAttribute;
+      const arr = posBuf.array as Float32Array;
+      const t = state.clock.elapsedTime;
+      for (let i = 0; i < particles.length; i++) {
+        const p = particles[i]!;
+        const phase = p.phase;
+        const driftX = Math.sin(t * 0.7 + phase) * 0.012;
+        const driftY = Math.sin(t * 0.55 + phase * 1.3) * 0.012;
+        const driftZ = Math.cos(t * 0.6 + phase * 0.9) * 0.012;
+        const expand = pulse.current * 0.08;
+        arr[i * 3] = basePos[i * 3]! + driftX + (basePos[i * 3]! - 0) * expand;
+        arr[i * 3 + 1] = basePos[i * 3 + 1]! + driftY + (basePos[i * 3 + 1]! - 1.0) * expand;
+        arr[i * 3 + 2] = basePos[i * 3 + 2]! + driftZ + (basePos[i * 3 + 2]! - 0) * expand;
+      }
+      posBuf.needsUpdate = true;
     }
+
+    // Slow Y rotation
+    if (groupRef.current) {
+      const targetSway = Math.sin(t(state) * 0.3) * 0.08;
+      groupRef.current.rotation.y = lerp(groupRef.current.rotation.y, targetSway, Math.min(1, delta * 1.4));
+    }
+
+    // Material additive intensity bumps on pulse
+    intensity.current = lerp(intensity.current, 1 + pulse.current * 1.5, 0.2);
   });
 
+  function t(s: { clock: THREE.Clock }) {
+    return s.clock.elapsedTime;
+  }
+
   return (
-    <group ref={groupRef} position={[0, 0, 0]}>
-      <primitive object={scene} />
+    <group ref={groupRef}>
+      <points ref={pointsRef} frustumCulled={false}>
+        <bufferGeometry>
+          <bufferAttribute
+            attach="attributes-position"
+            args={[posAttr, 3]}
+            count={particles.length}
+            itemSize={3}
+          />
+          <bufferAttribute
+            attach="attributes-color"
+            args={[colorAttr, 3]}
+            count={particles.length}
+            itemSize={3}
+          />
+          <bufferAttribute
+            attach="attributes-size"
+            args={[sizeAttr, 1]}
+            count={particles.length}
+            itemSize={1}
+          />
+        </bufferGeometry>
+        <pointsMaterial
+          size={0.038}
+          sizeAttenuation
+          vertexColors
+          transparent
+          opacity={0.95}
+          depthWrite={false}
+          blending={THREE.AdditiveBlending}
+          toneMapped={false}
+        />
+      </points>
     </group>
   );
 }
@@ -113,27 +327,19 @@ function CameraRig({ mode }: { mode: SceneMode }) {
   return null;
 }
 
-/* ---------- Floor (subtle reflection plane) ---------- */
-function Floor() {
-  return (
-    <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.01, 0]} receiveShadow>
-      <circleGeometry args={[3, 64]} />
-      <meshStandardMaterial color="#0f172a" roughness={0.7} metalness={0.4} />
-    </mesh>
-  );
-}
-
-/* ---------- Burst particles ---------- */
+/* ---------- Burst ---------- */
 function Burst({ mode, burstStat, burstId }: { mode: SceneMode; burstStat: StatKind | null; burstId: number }) {
   const groupRef = useRef<THREE.Group>(null);
   const t = useRef(0);
   const lastTrig = useRef(burstId);
   const anchor: [number, number, number] = useMemo(() => {
     const stat = burstStat ?? (mode !== "idle" ? mode : null);
-    if (!stat) return [0, 1.2, 0];
-    return stat === "INT" ? [0, 1.85, 0] : stat === "STR" ? [0, 1.2, 0] : [0, 1.0, 0];
+    if (!stat) return [0, 1.0, 0];
+    if (stat === "INT") return [0, 1.78, 0];
+    if (stat === "STR") return [0, 1.15, 0];
+    return [0, 0.9, 0]; // DIS
   }, [burstStat, mode]);
-  const color = burstStat ? STAT_COLOR[burstStat] : mode !== "idle" ? STAT_COLOR[mode] : "#60a5fa";
+  const color = burstStat ? STAT_HEX[burstStat] : mode !== "idle" ? STAT_HEX[mode] : "#60a5fa";
 
   useFrame((_, delta) => {
     if (burstId !== lastTrig.current) {
@@ -144,7 +350,7 @@ function Burst({ mode, burstStat, burstId }: { mode: SceneMode; burstStat: StatK
     if (!groupRef.current) return;
     groupRef.current.children.forEach((child, i) => {
       const angle = (i / 14) * Math.PI * 2;
-      const dist = (1 - t.current) * 1.0;
+      const dist = (1 - t.current) * 0.9;
       child.position.x = anchor[0] + Math.cos(angle) * dist;
       child.position.y = anchor[1] + Math.sin(angle) * dist;
       child.position.z = anchor[2] + (Math.cos(angle * 2) - 0.5) * dist * 0.4;
@@ -156,7 +362,7 @@ function Burst({ mode, burstStat, burstId }: { mode: SceneMode; burstStat: StatK
   return (
     <group ref={groupRef}>
       {Array.from({ length: 14 }).map((_, i) => (
-        <mesh key={i} scale={0.06}>
+        <mesh key={i} scale={0.05}>
           <sphereGeometry args={[1, 8, 8]} />
           <meshBasicMaterial color={color} transparent opacity={0} toneMapped={false} />
         </mesh>
@@ -194,38 +400,30 @@ export function HeroScene({
   }, []);
   if (!supported) return null;
 
-  const accent = mode === "idle" ? "#60a5fa" : STAT_COLOR[mode];
+  const accent = mode === "idle" ? "#60a5fa" : STAT_HEX[mode];
   const sparkleCount = Math.min(220, 80 + streak * 2);
 
   return (
     <div className="pointer-events-none fixed inset-0 z-0 overflow-hidden">
       <Canvas
-        camera={{ position: [0, 1.1, 3.4], fov: 38 }}
+        camera={{ position: [0, 1.0, 3.3], fov: 38 }}
         dpr={[1, 2]}
         gl={{ antialias: true, alpha: true }}
-        shadows
       >
         <color attach="background" args={["#020617"]} />
         <fog attach="fog" args={["#020617", 5, 16]} />
 
-        <ambientLight intensity={0.35} />
-        {/* Key light tinted by active stat */}
-        <pointLight position={[3, 4, 3]} intensity={2.4} color={accent} castShadow />
-        {/* Fill light from opposite side */}
-        <pointLight position={[-3, 2, 1]} intensity={1.0} color="#a855f7" />
-        <directionalLight position={[0, 5, 2]} intensity={0.6} />
-        {/* Rim light from behind for silhouette */}
-        <pointLight position={[0, 2, -3]} intensity={1.4} color={accent} />
+        <ambientLight intensity={0.6} />
 
         <Suspense fallback={null}>
-          <Character mode={mode} pulseTrigger={pulseTrigger} />
-          <Floor />
+          <ParticleHuman mode={mode} pulseTrigger={pulseTrigger} />
           <Burst mode={mode} burstStat={burstStat} burstId={burstId} />
           <CameraRig mode={mode} />
 
-          <Sparkles count={sparkleCount} scale={[12, 8, 10]} size={2.2} speed={0.32} color={accent} opacity={0.55} />
-          <Stars radius={60} depth={26} count={1600} factor={3.5} fade speed={0.6} />
-          <Environment preset="night" />
+          {/* Floating ambient sparkles around the figure */}
+          <Sparkles count={sparkleCount} scale={[6, 5, 5]} size={1.5} speed={0.3} color={accent} opacity={0.5} />
+          {/* Distant stars */}
+          <Stars radius={60} depth={26} count={1800} factor={3.5} fade speed={0.6} />
         </Suspense>
       </Canvas>
 
@@ -235,7 +433,7 @@ export function HeroScene({
         className="absolute inset-0"
         style={{
           background:
-            "radial-gradient(ellipse 70% 60% at 50% 50%, transparent 0%, rgba(2,6,23,0.5) 70%, rgba(2,6,23,0.92) 100%)",
+            "radial-gradient(ellipse 75% 65% at 50% 50%, transparent 0%, rgba(2,6,23,0.5) 70%, rgba(2,6,23,0.92) 100%)",
         }}
       />
 
