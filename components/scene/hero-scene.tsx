@@ -132,52 +132,35 @@ type Pose = Record<string, { x?: number; y?: number; z?: number; sx?: number; sy
 // `x/y/z` are absolute target Euler rotations; `sx/sy/sz` are sin-modulation amplitudes
 // added on top with frequency 1.
 
+// SUBTLE pose deltas only — head/neck/spine. Arms left to the idle animation.
+// Mixamo bone local axes are inconsistent across bones, so we keep all values
+// in a safe range (|value| < 0.25 rad) and never touch shoulders/arms/hands.
+
 const POSE_IDLE: Pose = {};
 
 const POSE_INT: Pose = {
-  // Head bent forward + slight sway
-  Head:           { x: 0.35, sy: 0.04 },
-  Neck:           { x: 0.18 },
-  Spine2:         { x: 0.10 },
-  // Right hand to chin (thinking pose)
-  RightShoulder:  { z: -0.2 },
-  RightArm:       { x: -1.55, y: 0.2, z: -0.55 },
-  RightForeArm:   { y: -2.05 },
-  RightHand:      { z: -0.3 },
-  // Left arm relaxed at side, slightly fidgety
-  LeftShoulder:   { z: 0.05 },
-  LeftArm:        { z: 0.06, sx: 0.02 },
+  // Head tilted slightly down + tiny side-to-side sway — concentration
+  Head:    { x: 0.22, sy: 0.025 },
+  Neck:    { x: 0.10 },
+  Spine2:  { x: 0.06 },
+  Spine1:  { x: 0.04 },
 };
 
 const POSE_STR: Pose = {
-  // Classic double-bicep flex
-  Spine1:         { x: -0.05 },
-  // Left arm: upper arm out, forearm up
-  LeftShoulder:   { z: 0.25 },
-  LeftArm:        { x: 0.0, y: 0.0, z: 1.55, sz: 0.02 },
-  LeftForeArm:    { y: 1.8, sx: 0.03 },
-  LeftHand:       { z: -0.3 },
-  // Right arm mirror
-  RightShoulder:  { z: -0.25 },
-  RightArm:       { x: 0.0, y: 0.0, z: -1.55, sz: -0.02 },
-  RightForeArm:   { y: -1.8, sx: 0.03 },
-  RightHand:      { z: 0.3 },
-  // Head slightly up + tense
-  Head:           { x: -0.1 },
+  // Chest up, slight back-arch — power / tension
+  Head:    { x: -0.06 },
+  Neck:    { x: -0.04 },
+  Spine2:  { x: -0.08 },
+  Spine1:  { x: -0.06, sx: 0.012 },
+  Spine:   { x: -0.03 },
 };
 
 const POSE_DIS: Pose = {
-  // Meditation / prayer — both hands meet in front of chest
-  Head:           { x: 0.05 },
-  Spine2:         { x: 0.02 },
-  LeftShoulder:   { z: 0.1 },
-  LeftArm:        { x: -1.05, y: 0.05, z: 0.65, sx: 0.015 },
-  LeftForeArm:    { y: 1.55 },
-  LeftHand:       { y: 0.1 },
-  RightShoulder:  { z: -0.1 },
-  RightArm:       { x: -1.05, y: -0.05, z: -0.65, sx: 0.015 },
-  RightForeArm:   { y: -1.55 },
-  RightHand:      { y: -0.1 },
+  // Tall posture, head slightly up — composure / discipline
+  Head:    { x: -0.03, sy: 0.012 },
+  Neck:    { x: 0.0 },
+  Spine2:  { x: -0.02 },
+  Spine1:  { x: -0.02 },
 };
 
 const POSES: Record<SceneMode, Pose> = {
