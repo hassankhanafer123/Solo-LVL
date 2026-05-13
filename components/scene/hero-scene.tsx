@@ -30,11 +30,13 @@ const STAT_HEX: Record<StatKind, string> = {
   DIS: "#c084fc",
 };
 
+// Vanguard model height ~1.7m, head ~y=1.5 in our coords.
+// Frames need to be wider so the figure is always visible.
 const CAMERA: Record<SceneMode, { pos: [number, number, number]; look: [number, number, number]; fov: number }> = {
-  idle: { pos: [0, 1.1, 3.5], look: [0, 1.1, 0], fov: 38 },
-  INT:  { pos: [0.4, 1.85, 1.3], look: [0, 1.85, 0], fov: 26 },
-  STR:  { pos: [0, 1.2, 2.0], look: [0, 1.1, 0], fov: 36 },
-  DIS:  { pos: [1.7, 1.0, 2.3], look: [0, 1.0, 0], fov: 36 },
+  idle: { pos: [0, 0.8, 3.6], look: [0, 0.8, 0], fov: 42 },
+  INT:  { pos: [0.3, 1.4, 1.8], look: [0, 1.4, 0], fov: 38 },  // head & shoulders
+  STR:  { pos: [0, 0.9, 2.4], look: [0, 0.9, 0], fov: 42 },    // chest + arms (whole flex pose)
+  DIS:  { pos: [1.4, 0.7, 2.6], look: [0, 0.7, 0], fov: 42 },  // side, full figure
 };
 
 function lerp(a: number, b: number, t: number) {
@@ -132,35 +134,49 @@ type Pose = Record<string, { x?: number; y?: number; z?: number; sx?: number; sy
 // `x/y/z` are absolute target Euler rotations; `sx/sy/sz` are sin-modulation amplitudes
 // added on top with frequency 1.
 
-// SUBTLE pose deltas only — head/neck/spine. Arms left to the idle animation.
-// Mixamo bone local axes are inconsistent across bones, so we keep all values
-// in a safe range (|value| < 0.25 rad) and never touch shoulders/arms/hands.
+// Per-mode pose definitions. Mixamo upper-arm bones are oriented with their
+// local +Y running down the bone (T-pose has arms outward along world ±X).
+// To raise an arm: rotate UpperArm around its local X (negative = forward/up).
+// To bend the elbow: rotate ForeArm around its local Y (forearm bends in the
+// plane defined by upper arm rotation).
 
 const POSE_IDLE: Pose = {};
 
 const POSE_INT: Pose = {
-  // Head tilted slightly down + tiny side-to-side sway — concentration
-  Head:    { x: 0.22, sy: 0.025 },
-  Neck:    { x: 0.10 },
-  Spine2:  { x: 0.06 },
-  Spine1:  { x: 0.04 },
+  // Reading / thinking — head down, slight forward lean
+  Head:        { x: 0.40, sy: 0.04 },     // head bent down ~23°, slight sway
+  Neck:        { x: 0.20 },
+  Spine2:      { x: 0.15 },
+  Spine1:      { x: 0.08 },
+  // Right arm raises slightly so hand is near chest (reading a book / chin)
+  RightArm:    { x: -0.9, sx: 0.03 },     // upper arm forward
+  RightForeArm:{ y: -1.4 },                // forearm bent up
+  // Left arm relaxed
+  LeftArm:     { sx: 0.02 },
 };
 
 const POSE_STR: Pose = {
-  // Chest up, slight back-arch — power / tension
-  Head:    { x: -0.06 },
-  Neck:    { x: -0.04 },
-  Spine2:  { x: -0.08 },
-  Spine1:  { x: -0.06, sx: 0.012 },
-  Spine:   { x: -0.03 },
+  // Double-bicep flex — both arms up, forearms bent
+  Head:        { x: -0.10 },
+  Spine2:      { x: -0.10 },
+  Spine1:      { x: -0.08, sx: 0.02 },     // tense breathing
+  // Left arm UP and slightly back
+  LeftArm:     { x: -1.4, y: -0.3, sz: 0.04 },
+  LeftForeArm: { y: 1.7 },                  // bend elbow up
+  // Right arm mirrored
+  RightArm:    { x: -1.4, y: 0.3, sz: -0.04 },
+  RightForeArm:{ y: -1.7 },                 // bend elbow up
 };
 
 const POSE_DIS: Pose = {
-  // Tall posture, head slightly up — composure / discipline
-  Head:    { x: -0.03, sy: 0.012 },
-  Neck:    { x: 0.0 },
-  Spine2:  { x: -0.02 },
-  Spine1:  { x: -0.02 },
+  // Meditation — hands together in front of chest (prayer)
+  Head:        { x: 0.06, sy: 0.015 },
+  Spine2:      { x: 0.02 },
+  // Both arms forward, bent so hands meet at chest
+  LeftArm:     { x: -1.1, y: -0.6, sx: 0.015 },
+  LeftForeArm: { y: 1.3 },
+  RightArm:    { x: -1.1, y: 0.6, sx: 0.015 },
+  RightForeArm:{ y: -1.3 },
 };
 
 const POSES: Record<SceneMode, Pose> = {
@@ -227,18 +243,39 @@ function Character({ mode, pulseTrigger }: { mode: SceneMode; pulseTrigger: numb
     bonesRef.current = found;
   }, [character]);
 
-  // Play idle animation — provides breathing motion under all poses
+  // Play idle animation — only active in idle mode so it doesn't fight poses
+  const idleActionRef = useRef<THREE.AnimationAction | null>(null);
   useEffect(() => {
     const idleName = names.find((n) => n.toLowerCase().includes("idle")) ?? names[0];
     if (idleName && actions[idleName]) {
       const action = actions[idleName];
       action.reset().setLoop(THREE.LoopRepeat, Infinity).play();
       action.timeScale = 0.8;
+      idleActionRef.current = action;
     }
     return () => {
       Object.values(actions).forEach((a) => a?.stop());
     };
   }, [actions, names]);
+
+  // Fade the idle animation weight based on whether we're posing.
+  // In idle mode → weight 1 (animation drives bones).
+  // In any stat mode → weight 0 (we drive bones manually).
+  useEffect(() => {
+    if (!idleActionRef.current) return;
+    const target = mode === "idle" ? 1 : 0;
+    // Use a fade for a smooth transition
+    if (mode === "idle") {
+      idleActionRef.current.fadeIn(0.4);
+    } else {
+      idleActionRef.current.fadeOut(0.4);
+      // ensure it stays paused at weight 0 (still call play so when we fadeIn later it resumes)
+    }
+    // We don't stop it, just fade; the mixer keeps it alive
+    if (target === 0) {
+      // Optional: pause the action at current frame so bone values are stable
+    }
+  }, [mode]);
 
   useFrame((state, delta) => {
     // Hologram color lerp
