@@ -73,23 +73,27 @@ const HOLO_FRAGMENT = /* glsl */ `
   varying vec3 vViewPosition;
   varying vec3 vWorldPosition;
 
+  // Pseudo-noise
+  float hash(vec3 p) { return fract(sin(dot(p, vec3(127.1, 311.7, 74.7))) * 43758.5453); }
+
   void main() {
     vec3 viewDir = normalize(vViewPosition);
     float fresnel = pow(1.0 - max(0.0, dot(vWorldNormal, viewDir)), uFresnelPower);
 
-    // Scanlines moving up
-    float scan = sin(vWorldPosition.y * uScanlineFreq - uTime * 2.5);
-    scan = smoothstep(0.0, 1.0, scan);
-    float scanStrength = mix(0.85, 1.25, scan);
+    // Heavy scanlines
+    float scan = sin(vWorldPosition.y * uScanlineFreq - uTime * 3.0);
+    scan = smoothstep(-0.3, 1.0, scan);
 
-    // Random flicker
-    float flicker = 0.95 + 0.05 * sin(uTime * 13.0 + vWorldPosition.y * 5.0);
+    // Heavy flicker so clothing details dissolve
+    float n = hash(floor(vWorldPosition * 60.0) + vec3(uTime * 0.4));
+    float flicker = 0.7 + 0.3 * n;
 
-    // Combine
-    vec3 col = uColor * (0.35 + fresnel * 2.6) * scanStrength * flicker;
+    // Final color — body is almost gone in the middle, edges bright
+    vec3 col = uColor * (fresnel * 3.5 + 0.15 * scan);
 
-    // Edge boost + body slight glow
-    float alpha = (fresnel * 0.85 + 0.12) * uOpacity;
+    // Body almost transparent in the middle, opaque at edges
+    float alpha = fresnel * 0.95 * uOpacity + scan * 0.04 * uOpacity;
+    alpha *= flicker;
 
     gl_FragColor = vec4(col, alpha);
   }
@@ -101,8 +105,8 @@ function makeHoloMaterial() {
       uColor: { value: BASE_COLOR_VEC.clone() },
       uTime: { value: 0 },
       uOpacity: { value: 1.0 },
-      uFresnelPower: { value: 2.2 },
-      uScanlineFreq: { value: 18.0 },
+      uFresnelPower: { value: 3.0 },
+      uScanlineFreq: { value: 30.0 },
     },
     vertexShader: HOLO_VERTEX,
     fragmentShader: HOLO_FRAGMENT,
@@ -182,6 +186,183 @@ function Character({ mode, pulseTrigger }: { mode: SceneMode; pulseTrigger: numb
     <group ref={groupRef} rotation={[0, Math.PI, 0]} position={[0, 0, 0]}>
       <primitive object={character} />
     </group>
+  );
+}
+
+/* ============================================================
+ * Task-specific floating prop art per stat
+ *
+ *   INT — small icosahedrons orbiting the head (thoughts / ideas)
+ *   STR — dumbbells & impact rings around the torso (lifting energy)
+ *   DIS — lotus mandala ring on the floor + rising sparkles (meditation)
+ * ============================================================ */
+
+function IntProps({ visible }: { visible: number }) {
+  const groupRef = useRef<THREE.Group>(null);
+  useFrame((state, delta) => {
+    if (!groupRef.current) return;
+    groupRef.current.rotation.y += delta * 0.6;
+    groupRef.current.children.forEach((c, i) => {
+      c.rotation.x += delta * (1 + (i % 3) * 0.4);
+      c.rotation.y += delta * (1.2 + (i % 4) * 0.3);
+      const breathe = 1 + Math.sin(state.clock.elapsedTime * 1.5 + i) * 0.15;
+      c.scale.setScalar(0.08 * breathe);
+    });
+  });
+  if (visible < 0.02) return null;
+  // 8 icosahedrons in a horizontal ring around the head (y ~ 1.85)
+  return (
+    <group ref={groupRef} position={[0, 1.85, 0]}>
+      {Array.from({ length: 8 }).map((_, i) => {
+        const a = (i / 8) * Math.PI * 2;
+        const r = 0.55;
+        return (
+          <mesh key={i} position={[Math.cos(a) * r, Math.sin(a * 1.7) * 0.08, Math.sin(a) * r]}>
+            <icosahedronGeometry args={[1, 0]} />
+            <meshBasicMaterial color="#60a5fa" transparent opacity={visible * 0.9} wireframe toneMapped={false} />
+          </mesh>
+        );
+      })}
+    </group>
+  );
+}
+
+function StrProps({ visible }: { visible: number }) {
+  const groupRef = useRef<THREE.Group>(null);
+  useFrame((state, delta) => {
+    if (!groupRef.current) return;
+    groupRef.current.rotation.y += delta * 0.4;
+    groupRef.current.children.forEach((c, i) => {
+      const t = state.clock.elapsedTime + i;
+      c.position.y = 1.1 + Math.sin(t * 1.2) * 0.18;
+      c.rotation.z = Math.sin(t * 0.6) * 0.4;
+    });
+  });
+  if (visible < 0.02) return null;
+  // Dumbbells: 4 around the torso, plus 2 impact rings on the floor
+  return (
+    <group ref={groupRef} position={[0, 0, 0]}>
+      {[0, 1, 2, 3].map((i) => {
+        const a = (i / 4) * Math.PI * 2;
+        const r = 0.95;
+        return (
+          <group key={i} position={[Math.cos(a) * r, 1.1, Math.sin(a) * r]}>
+            {/* dumbbell handle */}
+            <mesh rotation={[0, 0, Math.PI / 2]}>
+              <cylinderGeometry args={[0.018, 0.018, 0.2, 12]} />
+              <meshBasicMaterial color="#fb7185" transparent opacity={visible * 0.85} toneMapped={false} />
+            </mesh>
+            {/* left plate */}
+            <mesh position={[-0.11, 0, 0]}>
+              <sphereGeometry args={[0.06, 14, 14]} />
+              <meshBasicMaterial color="#fb7185" transparent opacity={visible} toneMapped={false} />
+            </mesh>
+            {/* right plate */}
+            <mesh position={[0.11, 0, 0]}>
+              <sphereGeometry args={[0.06, 14, 14]} />
+              <meshBasicMaterial color="#fb7185" transparent opacity={visible} toneMapped={false} />
+            </mesh>
+          </group>
+        );
+      })}
+      {/* Impact rings */}
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.02, 0]}>
+        <ringGeometry args={[0.9, 0.95, 64]} />
+        <meshBasicMaterial color="#fb7185" transparent opacity={visible * 0.6} side={THREE.DoubleSide} toneMapped={false} />
+      </mesh>
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.025, 0]}>
+        <ringGeometry args={[1.15, 1.18, 64]} />
+        <meshBasicMaterial color="#fb7185" transparent opacity={visible * 0.4} side={THREE.DoubleSide} toneMapped={false} />
+      </mesh>
+    </group>
+  );
+}
+
+function DisProps({ visible }: { visible: number }) {
+  const groupRef = useRef<THREE.Group>(null);
+  useFrame((state, delta) => {
+    if (!groupRef.current) return;
+    groupRef.current.rotation.y -= delta * 0.15;
+    // Make rising sparkles drift up
+    groupRef.current.children.forEach((c, i) => {
+      if ((c as THREE.Mesh).isMesh) return;
+      const t = state.clock.elapsedTime;
+      const offset = (t * 0.3 + i * 0.4) % 2.5;
+      c.position.y = offset - 0.2;
+      (c as THREE.Mesh & { material?: THREE.MeshBasicMaterial }).traverse((sub) => {
+        const m = (sub as THREE.Mesh).material as THREE.MeshBasicMaterial | undefined;
+        if (m && "opacity" in m) m.opacity = Math.max(0, (1 - offset / 2.5) * visible);
+      });
+    });
+  });
+  if (visible < 0.02) return null;
+  // Lotus mandala under feet — multiple rings + radiating petals
+  return (
+    <group ref={groupRef} position={[0, 0, 0]}>
+      {/* Concentric mandala rings on floor */}
+      {[0.4, 0.6, 0.85, 1.1].map((r, i) => (
+        <mesh key={i} rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.01 + i * 0.001, 0]}>
+          <ringGeometry args={[r, r + 0.02, 64]} />
+          <meshBasicMaterial color="#c084fc" transparent opacity={visible * (0.6 - i * 0.1)} side={THREE.DoubleSide} toneMapped={false} />
+        </mesh>
+      ))}
+      {/* Petals — 8 small ovals around the inner ring */}
+      {Array.from({ length: 8 }).map((_, i) => {
+        const a = (i / 8) * Math.PI * 2;
+        const r = 0.55;
+        return (
+          <mesh
+            key={`p${i}`}
+            position={[Math.cos(a) * r, 0.012, Math.sin(a) * r]}
+            rotation={[-Math.PI / 2, 0, -a + Math.PI / 2]}
+          >
+            <circleGeometry args={[0.08, 24]} />
+            <meshBasicMaterial color="#c084fc" transparent opacity={visible * 0.45} side={THREE.DoubleSide} toneMapped={false} />
+          </mesh>
+        );
+      })}
+      {/* Rising column sparkles */}
+      {Array.from({ length: 6 }).map((_, i) => (
+        <group key={`s${i}`}>
+          <mesh position={[Math.sin(i * 1.7) * 0.25, 0, Math.cos(i * 1.7) * 0.25]}>
+            <sphereGeometry args={[0.025, 8, 8]} />
+            <meshBasicMaterial color="#c084fc" transparent opacity={visible * 0.8} toneMapped={false} />
+          </mesh>
+        </group>
+      ))}
+    </group>
+  );
+}
+
+function TaskProps({ mode }: { mode: SceneMode }) {
+  // Smoothly fade each prop set in/out
+  const visRef = useRef({ INT: 0, STR: 0, DIS: 0 });
+  const [, force] = useState(0);
+
+  useFrame((_, delta) => {
+    const lerpRate = Math.min(1, delta * 3);
+    const target = {
+      INT: mode === "INT" ? 1 : 0,
+      STR: mode === "STR" ? 1 : 0,
+      DIS: mode === "DIS" ? 1 : 0,
+    };
+    let changed = false;
+    (["INT", "STR", "DIS"] as const).forEach((k) => {
+      const next = lerp(visRef.current[k], target[k], lerpRate);
+      if (Math.abs(next - visRef.current[k]) > 0.01) {
+        visRef.current[k] = next;
+        changed = true;
+      }
+    });
+    if (changed) force((n) => n + 1);
+  });
+
+  return (
+    <>
+      <IntProps visible={visRef.current.INT} />
+      <StrProps visible={visRef.current.STR} />
+      <DisProps visible={visRef.current.DIS} />
+    </>
   );
 }
 
@@ -313,6 +494,7 @@ export function HeroScene({
 
         <Suspense fallback={null}>
           <Character mode={mode} pulseTrigger={pulseTrigger} />
+          <TaskProps mode={mode} />
           <Floor mode={mode} />
           <Burst mode={mode} burstStat={burstStat} burstId={burstId} />
           <CameraRig mode={mode} />
