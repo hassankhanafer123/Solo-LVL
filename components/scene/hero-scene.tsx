@@ -141,14 +141,12 @@ export function HeroScene({
   const accent = mode === "idle" ? "#60a5fa" : STAT_COLOR[mode];
   const sparkleCount = Math.min(260, 100 + streak * 3);
 
-  // Camera per mode — figure spans y ~-0.7 to ~1.4, so all cameras look at y≈0.3
-  // and stay far enough back (z=4+) so the WHOLE figure stays in frame.
+  // Figure now spans y ≈ -0.85 (feet) → +1.62 (head top), center at y=0.4
   const CAM: Record<SceneMode, { pos: [number, number, number]; look: [number, number, number]; fov: number }> = {
-    idle: { pos: [0, 0.3, 4.2], look: [0, 0.3, 0], fov: 38 },
-    INT:  { pos: [0, 0.4, 4.0], look: [0, 0.3, 0], fov: 38 },
-    // STR: pure side view at z=0 (body is horizontal along z axis after -90° X rotation)
-    STR:  { pos: [4.2, -0.2, 0], look: [0, -0.35, 0], fov: 38 },
-    DIS:  { pos: [0, 0.3, 4.2], look: [0, 0.3, 0], fov: 38 },
+    idle: { pos: [0, 0.4, 5.0], look: [0, 0.4, 0], fov: 36 },
+    INT:  { pos: [0, 0.5, 4.6], look: [0, 0.4, 0], fov: 36 },
+    STR:  { pos: [5.0, -0.4, 0], look: [0, -0.4, 0], fov: 36 },
+    DIS:  { pos: [0, 0.4, 4.6], look: [0, 0.4, 0], fov: 36 },
   };
   const cam = CAM[mode];
 

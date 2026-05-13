@@ -75,24 +75,24 @@ const POSES: Record<SceneMode, Pose> = {
   DIS: POSE_DIS,
 };
 
-// Rest positions per part (idle base, in local space of parent)
+// Human-proportioned rest positions (Vitruvian-ish, head ~1/8 of body)
 const REST_POS: Record<PartName, [number, number, number]> = {
   root:        [0, 0, 0],
-  torso:       [0, 0.7, 0],
-  neck:        [0, 0.35, 0],
-  head:        [0, 0.22, 0],
-  l_upperarm:  [-0.27, 0.22, 0],
-  l_forearm:   [0, -0.38, 0],
+  torso:       [0, 0.85, 0],          // torso center higher
+  neck:        [0, 0.42, 0],          // neck above torso
+  head:        [0, 0.20, 0],
+  l_upperarm:  [-0.30, 0.34, 0],      // shoulder higher
+  l_forearm:   [0, -0.40, 0],         // longer upper arm
   l_hand:      [0, -0.38, 0],
-  r_upperarm:  [0.27, 0.22, 0],
-  r_forearm:   [0, -0.38, 0],
+  r_upperarm:  [0.30, 0.34, 0],
+  r_forearm:   [0, -0.40, 0],
   r_hand:      [0, -0.38, 0],
-  l_upperleg:  [-0.12, -0.5, 0],
-  l_lowerleg:  [0, -0.46, 0],
-  l_foot:      [0, -0.46, 0.06],
-  r_upperleg:  [0.12, -0.5, 0],
-  r_lowerleg:  [0, -0.46, 0],
-  r_foot:      [0, -0.46, 0.06],
+  l_upperleg:  [-0.14, -0.62, 0],     // hips lower & narrower
+  l_lowerleg:  [0, -0.52, 0],         // longer thigh
+  l_foot:      [0, -0.50, 0.07],      // longer shin
+  r_upperleg:  [0.14, -0.62, 0],
+  r_lowerleg:  [0, -0.52, 0],
+  r_foot:      [0, -0.50, 0.07],
 };
 
 export function Mannequin({ mode, pulseTrigger }: { mode: SceneMode; pulseTrigger: number }) {
@@ -234,39 +234,63 @@ export function Mannequin({ mode, pulseTrigger }: { mode: SceneMode; pulseTrigge
       )}
 
       <group ref={setRef("torso")} position={REST_POS.torso}>
-        {/* Torso mesh */}
-        <mesh material={mat}>
-          <boxGeometry args={[0.42, 0.6, 0.24]} />
+        {/* Upper torso — V-shaped chest using rounded box (wider top, narrower bottom) */}
+        <mesh scale={[1, 1, 0.65]} material={mat}>
+          <sphereGeometry args={[0.28, 24, 20]} />
         </mesh>
-        {/* Pelvis mesh */}
-        <mesh position={[0, -0.4, 0]} material={mat}>
-          <boxGeometry args={[0.36, 0.18, 0.24]} />
+        {/* Chest definition — slight inner sphere for pectoral suggestion */}
+        <mesh position={[0, 0.05, 0.15]} scale={[1.1, 0.6, 0.5]} material={mat}>
+          <sphereGeometry args={[0.18, 18, 14]} />
+        </mesh>
+        {/* Waist — slimmer connector */}
+        <mesh position={[0, -0.28, 0]} scale={[0.85, 1, 0.7]} material={mat}>
+          <sphereGeometry args={[0.18, 20, 16]} />
+        </mesh>
+        {/* Pelvis — rounded */}
+        <mesh position={[0, -0.5, 0]} scale={[1, 0.55, 0.75]} material={mat}>
+          <sphereGeometry args={[0.24, 22, 18]} />
         </mesh>
 
         {/* Neck → Head */}
         <group ref={setRef("neck")} position={REST_POS.neck}>
-          <mesh material={mat}>
-            <cylinderGeometry args={[0.07, 0.07, 0.12, 12]} />
+          <mesh scale={[1, 1, 1]} material={mat}>
+            <capsuleGeometry args={[0.065, 0.10, 4, 12]} />
           </mesh>
-          <group ref={setRef("head")} position={[0, 0.18, 0]}>
-            <mesh material={mat}>
-              <sphereGeometry args={[0.13, 22, 18]} />
+          <group ref={setRef("head")} position={REST_POS.head}>
+            {/* Slightly oval head (taller than wide) for human proportion */}
+            <mesh scale={[1, 1.15, 1]} material={mat}>
+              <sphereGeometry args={[0.13, 26, 22]} />
+            </mesh>
+            {/* Jaw suggestion */}
+            <mesh position={[0, -0.04, 0.04]} scale={[0.85, 0.55, 0.85]} material={mat}>
+              <sphereGeometry args={[0.11, 18, 14]} />
             </mesh>
           </group>
         </group>
 
-        {/* Left arm chain */}
+        {/* Left arm chain — shoulder ball + upper + forearm + hand */}
         <group ref={setRef("l_upperarm")} position={REST_POS.l_upperarm}>
-          <mesh position={[0, -0.18, 0]} material={mat}>
-            <capsuleGeometry args={[0.07, 0.3, 4, 12]} />
+          {/* Shoulder ball */}
+          <mesh material={mat}>
+            <sphereGeometry args={[0.075, 16, 14]} />
+          </mesh>
+          {/* Upper arm */}
+          <mesh position={[0, -0.20, 0]} material={mat}>
+            <capsuleGeometry args={[0.055, 0.34, 4, 12]} />
           </mesh>
           <group ref={setRef("l_forearm")} position={REST_POS.l_forearm}>
-            <mesh position={[0, -0.18, 0]} material={mat}>
-              <capsuleGeometry args={[0.06, 0.3, 4, 12]} />
+            {/* Elbow joint */}
+            <mesh material={mat}>
+              <sphereGeometry args={[0.06, 14, 12]} />
+            </mesh>
+            {/* Forearm tapered */}
+            <mesh position={[0, -0.20, 0]} material={mat}>
+              <capsuleGeometry args={[0.05, 0.32, 4, 12]} />
             </mesh>
             <group ref={setRef("l_hand")} position={REST_POS.l_hand}>
-              <mesh material={mat}>
-                <sphereGeometry args={[0.08, 14, 12]} />
+              {/* Hand — flattened oval */}
+              <mesh scale={[1, 1.3, 0.45]} material={mat}>
+                <sphereGeometry args={[0.065, 14, 12]} />
               </mesh>
             </group>
           </group>
@@ -274,16 +298,22 @@ export function Mannequin({ mode, pulseTrigger }: { mode: SceneMode; pulseTrigge
 
         {/* Right arm chain */}
         <group ref={setRef("r_upperarm")} position={REST_POS.r_upperarm}>
-          <mesh position={[0, -0.18, 0]} material={mat}>
-            <capsuleGeometry args={[0.07, 0.3, 4, 12]} />
+          <mesh material={mat}>
+            <sphereGeometry args={[0.075, 16, 14]} />
+          </mesh>
+          <mesh position={[0, -0.20, 0]} material={mat}>
+            <capsuleGeometry args={[0.055, 0.34, 4, 12]} />
           </mesh>
           <group ref={setRef("r_forearm")} position={REST_POS.r_forearm}>
-            <mesh position={[0, -0.18, 0]} material={mat}>
-              <capsuleGeometry args={[0.06, 0.3, 4, 12]} />
+            <mesh material={mat}>
+              <sphereGeometry args={[0.06, 14, 12]} />
+            </mesh>
+            <mesh position={[0, -0.20, 0]} material={mat}>
+              <capsuleGeometry args={[0.05, 0.32, 4, 12]} />
             </mesh>
             <group ref={setRef("r_hand")} position={REST_POS.r_hand}>
-              <mesh material={mat}>
-                <sphereGeometry args={[0.08, 14, 12]} />
+              <mesh scale={[1, 1.3, 0.45]} material={mat}>
+                <sphereGeometry args={[0.065, 14, 12]} />
               </mesh>
             </group>
           </group>
@@ -291,16 +321,27 @@ export function Mannequin({ mode, pulseTrigger }: { mode: SceneMode; pulseTrigge
 
         {/* Left leg chain */}
         <group ref={setRef("l_upperleg")} position={REST_POS.l_upperleg}>
-          <mesh position={[0, -0.22, 0]} material={mat}>
-            <capsuleGeometry args={[0.09, 0.36, 4, 12]} />
+          {/* Hip ball */}
+          <mesh material={mat}>
+            <sphereGeometry args={[0.10, 16, 14]} />
+          </mesh>
+          {/* Thigh */}
+          <mesh position={[0, -0.28, 0]} material={mat}>
+            <capsuleGeometry args={[0.085, 0.44, 4, 12]} />
           </mesh>
           <group ref={setRef("l_lowerleg")} position={REST_POS.l_lowerleg}>
-            <mesh position={[0, -0.22, 0]} material={mat}>
-              <capsuleGeometry args={[0.07, 0.36, 4, 12]} />
+            {/* Knee */}
+            <mesh material={mat}>
+              <sphereGeometry args={[0.075, 14, 12]} />
+            </mesh>
+            {/* Calf tapered */}
+            <mesh position={[0, -0.27, 0]} material={mat}>
+              <capsuleGeometry args={[0.07, 0.42, 4, 12]} />
             </mesh>
             <group ref={setRef("l_foot")} position={REST_POS.l_foot}>
-              <mesh material={mat}>
-                <boxGeometry args={[0.12, 0.06, 0.2]} />
+              {/* Foot — flattened oval */}
+              <mesh scale={[1, 0.55, 1.6]} position={[0, -0.02, 0.04]} material={mat}>
+                <sphereGeometry args={[0.09, 16, 12]} />
               </mesh>
             </group>
           </group>
@@ -308,16 +349,22 @@ export function Mannequin({ mode, pulseTrigger }: { mode: SceneMode; pulseTrigge
 
         {/* Right leg chain */}
         <group ref={setRef("r_upperleg")} position={REST_POS.r_upperleg}>
-          <mesh position={[0, -0.22, 0]} material={mat}>
-            <capsuleGeometry args={[0.09, 0.36, 4, 12]} />
+          <mesh material={mat}>
+            <sphereGeometry args={[0.10, 16, 14]} />
+          </mesh>
+          <mesh position={[0, -0.28, 0]} material={mat}>
+            <capsuleGeometry args={[0.085, 0.44, 4, 12]} />
           </mesh>
           <group ref={setRef("r_lowerleg")} position={REST_POS.r_lowerleg}>
-            <mesh position={[0, -0.22, 0]} material={mat}>
-              <capsuleGeometry args={[0.07, 0.36, 4, 12]} />
+            <mesh material={mat}>
+              <sphereGeometry args={[0.075, 14, 12]} />
+            </mesh>
+            <mesh position={[0, -0.27, 0]} material={mat}>
+              <capsuleGeometry args={[0.07, 0.42, 4, 12]} />
             </mesh>
             <group ref={setRef("r_foot")} position={REST_POS.r_foot}>
-              <mesh material={mat}>
-                <boxGeometry args={[0.12, 0.06, 0.2]} />
+              <mesh scale={[1, 0.55, 1.6]} position={[0, -0.02, 0.04]} material={mat}>
+                <sphereGeometry args={[0.09, 16, 12]} />
               </mesh>
             </group>
           </group>
