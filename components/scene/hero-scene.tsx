@@ -120,30 +120,91 @@ function makeHoloMaterial() {
 }
 
 /* ============================================================
- * The character
+ * Pose targets — Euler rotations applied to specific bones per mode.
+ * These layer on TOP of the idle animation each frame (we set rotations
+ * after the mixer updates the skeleton), creating a task-specific
+ * posture with the idle anim's subtle breathing still showing through.
  *
- * Critical: skinned-mesh animations only deform the mesh if the
- * material supports skinning. Custom ShaderMaterial does not by
- * default, which was leaving the figure stuck in T-pose. We use
- * MeshStandardMaterial here (which supports skinning natively) +
- * heavy emissive + transparency for the hologram look, and
- * SkeletonUtils.clone (not scene.clone) so each mount gets its
- * own properly-rebound skeleton.
+ * Bone names follow Mixamo convention (mixamorigHead, mixamorigLeftArm,
+ * etc.). We look up partial-match suffixes to handle naming variants.
+ * ============================================================ */
+type Pose = Record<string, { x?: number; y?: number; z?: number; sx?: number; sy?: number; sz?: number }>;
+// `x/y/z` are absolute target Euler rotations; `sx/sy/sz` are sin-modulation amplitudes
+// added on top with frequency 1.
+
+const POSE_IDLE: Pose = {};
+
+const POSE_INT: Pose = {
+  // Head bent forward + slight sway
+  Head:           { x: 0.35, sy: 0.04 },
+  Neck:           { x: 0.18 },
+  Spine2:         { x: 0.10 },
+  // Right hand to chin (thinking pose)
+  RightShoulder:  { z: -0.2 },
+  RightArm:       { x: -1.55, y: 0.2, z: -0.55 },
+  RightForeArm:   { y: -2.05 },
+  RightHand:      { z: -0.3 },
+  // Left arm relaxed at side, slightly fidgety
+  LeftShoulder:   { z: 0.05 },
+  LeftArm:        { z: 0.06, sx: 0.02 },
+};
+
+const POSE_STR: Pose = {
+  // Classic double-bicep flex
+  Spine1:         { x: -0.05 },
+  // Left arm: upper arm out, forearm up
+  LeftShoulder:   { z: 0.25 },
+  LeftArm:        { x: 0.0, y: 0.0, z: 1.55, sz: 0.02 },
+  LeftForeArm:    { y: 1.8, sx: 0.03 },
+  LeftHand:       { z: -0.3 },
+  // Right arm mirror
+  RightShoulder:  { z: -0.25 },
+  RightArm:       { x: 0.0, y: 0.0, z: -1.55, sz: -0.02 },
+  RightForeArm:   { y: -1.8, sx: 0.03 },
+  RightHand:      { z: 0.3 },
+  // Head slightly up + tense
+  Head:           { x: -0.1 },
+};
+
+const POSE_DIS: Pose = {
+  // Meditation / prayer — both hands meet in front of chest
+  Head:           { x: 0.05 },
+  Spine2:         { x: 0.02 },
+  LeftShoulder:   { z: 0.1 },
+  LeftArm:        { x: -1.05, y: 0.05, z: 0.65, sx: 0.015 },
+  LeftForeArm:    { y: 1.55 },
+  LeftHand:       { y: 0.1 },
+  RightShoulder:  { z: -0.1 },
+  RightArm:       { x: -1.05, y: -0.05, z: -0.65, sx: 0.015 },
+  RightForeArm:   { y: -1.55 },
+  RightHand:      { y: -0.1 },
+};
+
+const POSES: Record<SceneMode, Pose> = {
+  idle: POSE_IDLE,
+  INT: POSE_INT,
+  STR: POSE_STR,
+  DIS: POSE_DIS,
+};
+
+/* ============================================================
+ * The character
  * ============================================================ */
 function Character({ mode, pulseTrigger }: { mode: SceneMode; pulseTrigger: number }) {
   const groupRef = useRef<THREE.Group>(null);
   const matRef = useRef<THREE.MeshStandardMaterial | null>(null);
   const { scene, animations } = useGLTF("/models/figure.glb");
 
-  // SkeletonUtils.clone properly clones SkinnedMesh + Skeleton
-  // (scene.clone leaves clones sharing skeletons, which breaks animation)
   const character = useMemo(() => SkeletonUtils.clone(scene), [scene]);
   const { actions, names } = useAnimations(animations, character);
 
   const pulse = useRef(0);
   const lastPulse = useRef(pulseTrigger);
+  const bonesRef = useRef<Record<string, THREE.Bone>>({});
+  // Smoothly-interpolated current pose values per bone-key
+  const currentPose = useRef<Record<string, { x: number; y: number; z: number; sx: number; sy: number; sz: number }>>({});
 
-  // Replace materials with a skinning-compatible hologram material
+  // Material setup
   useEffect(() => {
     const holoMat = new THREE.MeshStandardMaterial({
       color: new THREE.Color("#7dd3fc"),
@@ -168,40 +229,97 @@ function Character({ mode, pulseTrigger }: { mode: SceneMode; pulseTrigger: numb
     });
   }, [character]);
 
-  // Play idle animation — the model has Idle/Walk/Run/TPose; we pick Idle
+  // Find bones — Mixamo uses prefixes like `mixamorigHead`. We strip and match.
+  useEffect(() => {
+    const found: Record<string, THREE.Bone> = {};
+    character.traverse((child) => {
+      const b = child as THREE.Bone;
+      if (!b.isBone) return;
+      // Strip common Mixamo prefixes for cleaner key
+      const cleaned = b.name
+        .replace(/^mixamorig:?/i, "")
+        .replace(/^Armature\|/, "");
+      found[cleaned] = b;
+    });
+    bonesRef.current = found;
+  }, [character]);
+
+  // Play idle animation — provides breathing motion under all poses
   useEffect(() => {
     const idleName = names.find((n) => n.toLowerCase().includes("idle")) ?? names[0];
     if (idleName && actions[idleName]) {
       const action = actions[idleName];
       action.reset().setLoop(THREE.LoopRepeat, Infinity).play();
-      action.timeScale = 0.8; // slightly slower idle for calmer feel
+      action.timeScale = 0.8;
     }
     return () => {
       Object.values(actions).forEach((a) => a?.stop());
     };
   }, [actions, names]);
 
-  // Per-frame: tint emissive toward stat color + handle XP-gain pulse
-  useFrame((_, delta) => {
+  useFrame((state, delta) => {
+    // Hologram color lerp
     if (matRef.current) {
       const target = mode === "idle" ? BASE_COLOR_VEC : STAT_COLOR_VEC[mode];
       matRef.current.color.lerp(target, Math.min(1, delta * 2.5));
       matRef.current.emissive.lerp(target, Math.min(1, delta * 2.5));
     }
 
+    // Pulse on XP gain
     if (pulseTrigger !== lastPulse.current) {
       pulse.current = 1;
       lastPulse.current = pulseTrigger;
     }
     pulse.current = Math.max(0, pulse.current - delta * 2);
-
     if (groupRef.current) {
       const s = 1 + pulse.current * 0.04;
       groupRef.current.scale.setScalar(lerp(groupRef.current.scale.x, s, Math.min(1, delta * 8)));
     }
+
+    // Apply per-mode pose AFTER the idle animation has updated bones this frame
+    // The idle anim sets bone rotations; we then either layer on top (for idle = no-op)
+    // or override entirely with our pose targets, plus a small sin modulation.
+    const targetPose = POSES[mode];
+    const lerpRate = Math.min(1, delta * 4);
+    const t = state.clock.elapsedTime;
+
+    // For each pose key, lerp current values toward targets
+    for (const [boneKey, target] of Object.entries(targetPose)) {
+      const cur = currentPose.current[boneKey] ?? { x: 0, y: 0, z: 0, sx: 0, sy: 0, sz: 0 };
+      cur.x = lerp(cur.x, target.x ?? 0, lerpRate);
+      cur.y = lerp(cur.y, target.y ?? 0, lerpRate);
+      cur.z = lerp(cur.z, target.z ?? 0, lerpRate);
+      cur.sx = lerp(cur.sx, target.sx ?? 0, lerpRate);
+      cur.sy = lerp(cur.sy, target.sy ?? 0, lerpRate);
+      cur.sz = lerp(cur.sz, target.sz ?? 0, lerpRate);
+      currentPose.current[boneKey] = cur;
+    }
+    // Also fade out any bones whose target was removed (e.g., switching out of a mode)
+    for (const boneKey of Object.keys(currentPose.current)) {
+      if (!(boneKey in targetPose)) {
+        const cur = currentPose.current[boneKey]!;
+        cur.x = lerp(cur.x, 0, lerpRate);
+        cur.y = lerp(cur.y, 0, lerpRate);
+        cur.z = lerp(cur.z, 0, lerpRate);
+        cur.sx = lerp(cur.sx, 0, lerpRate);
+        cur.sy = lerp(cur.sy, 0, lerpRate);
+        cur.sz = lerp(cur.sz, 0, lerpRate);
+      }
+    }
+
+    // Now apply to the actual bones (overwriting what the idle anim set)
+    for (const [boneKey, vals] of Object.entries(currentPose.current)) {
+      const bone = bonesRef.current[boneKey];
+      if (!bone) continue;
+      // Magnitude — when in idle mode all targets are 0; we let the anim show through
+      const mag = Math.hypot(vals.x, vals.y, vals.z, vals.sx, vals.sy, vals.sz);
+      if (mag < 0.005) continue;
+      bone.rotation.x = vals.x + Math.sin(t * 1.2 + boneKey.length) * vals.sx;
+      bone.rotation.y = vals.y + Math.sin(t * 1.0 + boneKey.length * 0.7) * vals.sy;
+      bone.rotation.z = vals.z + Math.sin(t * 1.4 + boneKey.length * 0.5) * vals.sz;
+    }
   });
 
-  // Face the camera (rotate 180° around Y)
   return (
     <group ref={groupRef} rotation={[0, Math.PI, 0]} position={[0, 0, 0]}>
       <primitive object={character} />
