@@ -111,12 +111,12 @@ export function Mannequin({ mode, pulseTrigger }: { mode: SceneMode; pulseTrigge
       new THREE.MeshStandardMaterial({
         color: BASE_HEX,
         emissive: BASE_HEX,
-        emissiveIntensity: 1.4,
+        emissiveIntensity: 1.6,
         transparent: true,
-        opacity: 0.55,
+        opacity: 0.82,
         roughness: 0.3,
-        metalness: 0,
-        depthWrite: false,
+        metalness: 0.1,
+        depthWrite: true,
       }),
     [],
   );
@@ -206,9 +206,9 @@ export function Mannequin({ mode, pulseTrigger }: { mode: SceneMode; pulseTrigge
           <mesh material={mat}>
             <cylinderGeometry args={[0.07, 0.07, 0.12, 12]} />
           </mesh>
-          <group ref={setRef("head")} position={REST_POS.head}>
+          <group ref={setRef("head")} position={[0, 0.18, 0]}>
             <mesh material={mat}>
-              <sphereGeometry args={[0.2, 22, 18]} />
+              <sphereGeometry args={[0.13, 22, 18]} />
             </mesh>
           </group>
         </group>

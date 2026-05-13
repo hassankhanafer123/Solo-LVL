@@ -21,6 +21,23 @@ const STAT_COLOR: Record<StatKind, string> = {
   DIS: "#c084fc",
 };
 
+function lerp(a: number, b: number, t: number) {
+  return a + (b - a) * t;
+}
+
+function CameraRig({ target }: { target: { pos: [number, number, number]; look: [number, number, number]; fov: number } }) {
+  useFrame((state, delta) => {
+    const cam = state.camera as THREE.PerspectiveCamera;
+    cam.position.x = lerp(cam.position.x, target.pos[0], Math.min(1, delta * 1.6));
+    cam.position.y = lerp(cam.position.y, target.pos[1], Math.min(1, delta * 1.6));
+    cam.position.z = lerp(cam.position.z, target.pos[2], Math.min(1, delta * 1.6));
+    cam.lookAt(target.look[0], target.look[1], target.look[2]);
+    cam.fov = lerp(cam.fov, target.fov, Math.min(1, delta * 1.6));
+    cam.updateProjectionMatrix();
+  });
+  return null;
+}
+
 function AmbientOrb({ mode, pulseTrigger }: { mode: SceneMode; pulseTrigger: number }) {
   const ref = useRef<THREE.Mesh>(null);
   const matRef = useRef<THREE.MeshBasicMaterial>(null);
@@ -124,9 +141,18 @@ export function HeroScene({
   const accent = mode === "idle" ? "#60a5fa" : STAT_COLOR[mode];
   const sparkleCount = Math.min(260, 100 + streak * 3);
 
+  // Camera framing per mode — frames the mannequin properly even when it goes horizontal
+  const CAM: Record<SceneMode, { pos: [number, number, number]; look: [number, number, number]; fov: number }> = {
+    idle: { pos: [0, 0.3, 3.4], look: [0, 0.3, 0], fov: 42 },
+    INT:  { pos: [0, 0.2, 2.6], look: [0, 0.2, 0], fov: 40 },
+    STR:  { pos: [0, 0.4, 2.5], look: [0, -0.2, 0], fov: 50 }, // wider + look slightly down so the plank fits
+    DIS:  { pos: [0, 0.2, 2.6], look: [0, 0.0, 0], fov: 44 },
+  };
+  const cam = CAM[mode];
+
   return (
     <div className="pointer-events-none fixed inset-0 z-0 overflow-hidden">
-      <Canvas camera={{ position: [0, 0.4, 3.6], fov: 42 }} dpr={[1, 2]} gl={{ antialias: true, alpha: true }}>
+      <Canvas camera={{ position: cam.pos, fov: cam.fov }} dpr={[1, 2]} gl={{ antialias: true, alpha: true }}>
         <color attach="background" args={["#020617"]} />
         <fog attach="fog" args={["#020617", 4, 18]} />
 
@@ -139,6 +165,7 @@ export function HeroScene({
           <Mannequin mode={mode} pulseTrigger={pulseTrigger} />
           <AmbientOrb mode={mode} pulseTrigger={pulseTrigger} />
           <Burst mode={mode} burstStat={burstStat} burstId={burstId} />
+          <CameraRig target={cam} />
           <Sparkles count={sparkleCount} scale={[6, 5, 5]} size={1.8} speed={0.35} color={accent} opacity={0.55} position={[0, 0.4, 0]} />
           <Stars radius={70} depth={30} count={2200} factor={3.5} fade speed={0.6} />
         </Suspense>
