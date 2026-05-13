@@ -111,12 +111,26 @@ export function Mannequin({ mode, pulseTrigger }: { mode: SceneMode; pulseTrigge
       new THREE.MeshStandardMaterial({
         color: BASE_HEX,
         emissive: BASE_HEX,
-        emissiveIntensity: 1.6,
+        emissiveIntensity: 0.65,
         transparent: true,
-        opacity: 0.82,
-        roughness: 0.3,
-        metalness: 0.1,
+        opacity: 0.95,
+        roughness: 0.45,
+        metalness: 0.25,
         depthWrite: true,
+      }),
+    [],
+  );
+  // Prop material — books/mats etc., slightly different look
+  const propMat = useMemo(
+    () =>
+      new THREE.MeshStandardMaterial({
+        color: "#e2e8f0",
+        emissive: BASE_HEX,
+        emissiveIntensity: 0.5,
+        transparent: true,
+        opacity: 0.9,
+        roughness: 0.6,
+        metalness: 0.1,
       }),
     [],
   );
@@ -191,6 +205,41 @@ export function Mannequin({ mode, pulseTrigger }: { mode: SceneMode; pulseTrigge
 
   return (
     <group ref={setRef("root")} position={REST_POS.root}>
+      {/* Per-mode props */}
+      {mode === "INT" && (
+        // Book mesh floating in front of the figure where hands meet
+        <group position={[0, 0.7, 0.35]} rotation={[-0.4, 0, 0]}>
+          <mesh material={propMat}>
+            <boxGeometry args={[0.32, 0.04, 0.24]} />
+          </mesh>
+          {/* Page split line */}
+          <mesh position={[0, 0.022, 0]}>
+            <boxGeometry args={[0.005, 0.001, 0.22]} />
+            <meshBasicMaterial color="#94a3b8" />
+          </mesh>
+        </group>
+      )}
+      {mode === "DIS" && (
+        // Lotus mat under the figure
+        <group position={[0, -0.5, 0]}>
+          <mesh rotation={[-Math.PI / 2, 0, 0]} material={propMat}>
+            <cylinderGeometry args={[0.55, 0.55, 0.04, 32]} />
+          </mesh>
+          {/* Inner mandala ring on top of mat */}
+          <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.022, 0]}>
+            <ringGeometry args={[0.32, 0.36, 32]} />
+            <meshBasicMaterial color="#c084fc" transparent opacity={0.7} side={THREE.DoubleSide} toneMapped={false} />
+          </mesh>
+        </group>
+      )}
+      {mode === "STR" && (
+        // Ground plane (so the push-up has something to bounce against)
+        <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.5, 0]}>
+          <circleGeometry args={[1.2, 32]} />
+          <meshStandardMaterial color="#0f172a" roughness={0.7} metalness={0.3} transparent opacity={0.55} />
+        </mesh>
+      )}
+
       <group ref={setRef("torso")} position={REST_POS.torso}>
         {/* Torso mesh */}
         <mesh material={mat}>

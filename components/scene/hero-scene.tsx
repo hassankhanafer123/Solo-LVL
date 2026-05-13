@@ -143,10 +143,10 @@ export function HeroScene({
 
   // Camera framing per mode — frames the mannequin properly even when it goes horizontal
   const CAM: Record<SceneMode, { pos: [number, number, number]; look: [number, number, number]; fov: number }> = {
-    idle: { pos: [0, 0.3, 3.4], look: [0, 0.3, 0], fov: 42 },
-    INT:  { pos: [0, 0.2, 2.6], look: [0, 0.2, 0], fov: 40 },
-    STR:  { pos: [0, 0.4, 2.5], look: [0, -0.2, 0], fov: 50 }, // wider + look slightly down so the plank fits
-    DIS:  { pos: [0, 0.2, 2.6], look: [0, 0.0, 0], fov: 44 },
+    idle: { pos: [0, 0.2, 3.2], look: [0, 0.1, 0], fov: 40 },
+    INT:  { pos: [0, 0.25, 2.4], look: [0, 0.05, 0], fov: 38 },
+    STR:  { pos: [0.6, 0.6, 2.3], look: [0, -0.3, 0], fov: 50 }, // angle so plank reads
+    DIS:  { pos: [0, 0.1, 2.5], look: [0, -0.2, 0], fov: 42 },
   };
   const cam = CAM[mode];
 
@@ -156,10 +156,11 @@ export function HeroScene({
         <color attach="background" args={["#020617"]} />
         <fog attach="fog" args={["#020617", 4, 18]} />
 
-        <ambientLight intensity={0.5} />
-        <pointLight position={[2, 3, 3]} intensity={1.4} color={accent} />
-        <pointLight position={[-2, 2, 1]} intensity={0.7} color="#a855f7" />
-        <pointLight position={[0, 2, -3]} intensity={1.2} color={accent} />
+        <ambientLight intensity={0.8} />
+        <pointLight position={[2, 3, 3]} intensity={2.4} color={accent} />
+        <pointLight position={[-2, 2, 1]} intensity={1.2} color="#a855f7" />
+        <pointLight position={[0, 2, -3]} intensity={1.8} color={accent} />
+        <directionalLight position={[0, 5, 2]} intensity={0.8} />
 
         <Suspense fallback={null}>
           <Mannequin mode={mode} pulseTrigger={pulseTrigger} />
