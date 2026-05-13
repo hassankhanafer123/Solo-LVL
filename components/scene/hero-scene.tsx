@@ -2,8 +2,9 @@
 
 import { Suspense, useState, useEffect, useRef, useMemo } from "react";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
-import { useGLTF, useAnimations, Sparkles, Stars, Edges } from "@react-three/drei";
+import { useGLTF, useAnimations, Sparkles, Stars } from "@react-three/drei";
 import * as THREE from "three";
+import { SkeletonUtils } from "three-stdlib";
 import type { StatKind } from "@/lib/types";
 
 useGLTF.preload("/models/figure.glb");
@@ -120,53 +121,72 @@ function makeHoloMaterial() {
 
 /* ============================================================
  * The character
+ *
+ * Critical: skinned-mesh animations only deform the mesh if the
+ * material supports skinning. Custom ShaderMaterial does not by
+ * default, which was leaving the figure stuck in T-pose. We use
+ * MeshStandardMaterial here (which supports skinning natively) +
+ * heavy emissive + transparency for the hologram look, and
+ * SkeletonUtils.clone (not scene.clone) so each mount gets its
+ * own properly-rebound skeleton.
  * ============================================================ */
 function Character({ mode, pulseTrigger }: { mode: SceneMode; pulseTrigger: number }) {
   const groupRef = useRef<THREE.Group>(null);
-  const matRef = useRef<THREE.ShaderMaterial | null>(null);
-  const edgeColorRef = useRef<THREE.Color>(new THREE.Color("#7dd3fc"));
+  const matRef = useRef<THREE.MeshStandardMaterial | null>(null);
   const { scene, animations } = useGLTF("/models/figure.glb");
-  const { actions, names } = useAnimations(animations, groupRef);
+
+  // SkeletonUtils.clone properly clones SkinnedMesh + Skeleton
+  // (scene.clone leaves clones sharing skeletons, which breaks animation)
+  const character = useMemo(() => SkeletonUtils.clone(scene), [scene]);
+  const { actions, names } = useAnimations(animations, character);
 
   const pulse = useRef(0);
   const lastPulse = useRef(pulseTrigger);
 
-  // Clone scene so each mount gets its own
-  const character = useMemo(() => scene.clone(true), [scene]);
-
-  // Replace all materials with holographic shader & add edge overlays
+  // Replace materials with a skinning-compatible hologram material
   useEffect(() => {
-    const sharedMat = makeHoloMaterial();
-    matRef.current = sharedMat;
+    const holoMat = new THREE.MeshStandardMaterial({
+      color: new THREE.Color("#7dd3fc"),
+      emissive: new THREE.Color("#7dd3fc"),
+      emissiveIntensity: 1.4,
+      transparent: true,
+      opacity: 0.42,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+      roughness: 0.35,
+      metalness: 0.0,
+    });
+    matRef.current = holoMat;
     character.traverse((child) => {
-      const m = child as THREE.Mesh;
-      if (!m.isMesh) return;
-      m.material = sharedMat;
-      m.castShadow = false;
-      m.receiveShadow = false;
-      m.frustumCulled = false;
+      const m = child as THREE.SkinnedMesh;
+      if (m.isSkinnedMesh || (child as THREE.Mesh).isMesh) {
+        m.material = holoMat;
+        m.castShadow = false;
+        m.receiveShadow = false;
+        m.frustumCulled = false;
+      }
     });
   }, [character]);
 
-  // Play idle animation for subtle motion
+  // Play idle animation — the model has Idle/Walk/Run/TPose; we pick Idle
   useEffect(() => {
     const idleName = names.find((n) => n.toLowerCase().includes("idle")) ?? names[0];
     if (idleName && actions[idleName]) {
-      actions[idleName].reset().fadeIn(0.4).play();
+      const action = actions[idleName];
+      action.reset().setLoop(THREE.LoopRepeat, Infinity).play();
+      action.timeScale = 0.8; // slightly slower idle for calmer feel
     }
     return () => {
-      Object.values(actions).forEach((a) => a?.fadeOut(0.3));
+      Object.values(actions).forEach((a) => a?.stop());
     };
   }, [actions, names]);
 
-  // Tick shader time, color lerp, pulse scale
-  useFrame((state, delta) => {
+  // Per-frame: tint emissive toward stat color + handle XP-gain pulse
+  useFrame((_, delta) => {
     if (matRef.current) {
-      const u = matRef.current.uniforms;
-      if (u.uTime) u.uTime.value = state.clock.elapsedTime;
       const target = mode === "idle" ? BASE_COLOR_VEC : STAT_COLOR_VEC[mode];
-      if (u.uColor) (u.uColor.value as THREE.Color).lerp(target, Math.min(1, delta * 2.5));
-      edgeColorRef.current.lerp(target, Math.min(1, delta * 2.5));
+      matRef.current.color.lerp(target, Math.min(1, delta * 2.5));
+      matRef.current.emissive.lerp(target, Math.min(1, delta * 2.5));
     }
 
     if (pulseTrigger !== lastPulse.current) {
@@ -490,7 +510,11 @@ export function HeroScene({
         <color attach="background" args={["#020617"]} />
         <fog attach="fog" args={["#020617", 5, 14]} />
 
-        <ambientLight intensity={0.6} />
+        <ambientLight intensity={0.45} />
+        <pointLight position={[2, 3, 3]} intensity={1.6} color={accent} />
+        <pointLight position={[-2, 2, 1]} intensity={0.8} color="#a855f7" />
+        <pointLight position={[0, 2, -3]} intensity={1.2} color={accent} />
+        <directionalLight position={[0, 5, 2]} intensity={0.5} />
 
         <Suspense fallback={null}>
           <Character mode={mode} pulseTrigger={pulseTrigger} />
