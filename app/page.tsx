@@ -25,7 +25,6 @@ const HeroScene = dynamic(
   () => import("@/components/scene/hero-scene").then((m) => m.HeroScene),
   { ssr: false, loading: () => null },
 );
-import { TaskFigure } from "@/components/figures/task-figures";
 
 /* -------- Types & seed -------- */
 
@@ -265,9 +264,6 @@ export default function Dashboard() {
         xpRatio={player.xpInLevel / player.xpToNext}
         streak={player.streak}
       />
-
-      {/* === Animated SVG figure that actually does the task === */}
-      <TaskFigure mode={sceneMode} />
 
       {/* === Fixed top bar === */}
       <header className="fixed top-0 inset-x-0 z-30 px-6 py-5 flex items-center justify-between">

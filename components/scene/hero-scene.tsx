@@ -5,6 +5,7 @@ import { Canvas, useFrame } from "@react-three/fiber";
 import { Sparkles, Stars } from "@react-three/drei";
 import * as THREE from "three";
 import type { StatKind } from "@/lib/types";
+import { Mannequin } from "./mannequin";
 
 export type SceneMode = "idle" | StatKind;
 
@@ -125,16 +126,20 @@ export function HeroScene({
 
   return (
     <div className="pointer-events-none fixed inset-0 z-0 overflow-hidden">
-      <Canvas camera={{ position: [0, 0, 5], fov: 50 }} dpr={[1, 2]} gl={{ antialias: true, alpha: true }}>
+      <Canvas camera={{ position: [0, 0.4, 3.6], fov: 42 }} dpr={[1, 2]} gl={{ antialias: true, alpha: true }}>
         <color attach="background" args={["#020617"]} />
         <fog attach="fog" args={["#020617", 4, 18]} />
 
         <ambientLight intensity={0.5} />
+        <pointLight position={[2, 3, 3]} intensity={1.4} color={accent} />
+        <pointLight position={[-2, 2, 1]} intensity={0.7} color="#a855f7" />
+        <pointLight position={[0, 2, -3]} intensity={1.2} color={accent} />
 
         <Suspense fallback={null}>
+          <Mannequin mode={mode} pulseTrigger={pulseTrigger} />
           <AmbientOrb mode={mode} pulseTrigger={pulseTrigger} />
           <Burst mode={mode} burstStat={burstStat} burstId={burstId} />
-          <Sparkles count={sparkleCount} scale={[18, 12, 14]} size={2.6} speed={0.36} color={accent} opacity={0.55} />
+          <Sparkles count={sparkleCount} scale={[6, 5, 5]} size={1.8} speed={0.35} color={accent} opacity={0.55} position={[0, 0.4, 0]} />
           <Stars radius={70} depth={30} count={2200} factor={3.5} fade speed={0.6} />
         </Suspense>
       </Canvas>
