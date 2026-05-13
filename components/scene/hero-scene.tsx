@@ -141,15 +141,14 @@ export function HeroScene({
   const accent = mode === "idle" ? "#60a5fa" : STAT_COLOR[mode];
   const sparkleCount = Math.min(260, 100 + streak * 3);
 
-  // Camera per mode — angles chosen so each pose is visually obvious
+  // Camera per mode — figure spans y ~-0.7 to ~1.4, so all cameras look at y≈0.3
+  // and stay far enough back (z=4+) so the WHOLE figure stays in frame.
   const CAM: Record<SceneMode, { pos: [number, number, number]; look: [number, number, number]; fov: number }> = {
-    idle: { pos: [0, 0.2, 3.2], look: [0, 0.1, 0], fov: 40 },
-    // INT: front, slightly above so we see hands-with-book + bent head
-    INT:  { pos: [0, 0.5, 2.6], look: [0, 0.0, 0], fov: 40 },
-    // STR: PURE SIDE view (camera off to the right) so the horizontal plank reads clearly as a push-up
-    STR:  { pos: [2.6, 0.0, 0.4], look: [0, -0.3, 0], fov: 45 },
-    // DIS: front, eye level, slightly back so the prayer-hands pose reads
-    DIS:  { pos: [0, 0.3, 2.6], look: [0, 0.2, 0], fov: 40 },
+    idle: { pos: [0, 0.3, 4.2], look: [0, 0.3, 0], fov: 38 },
+    INT:  { pos: [0, 0.4, 4.0], look: [0, 0.3, 0], fov: 38 },
+    // STR: pure side view at z=0 (body is horizontal along z axis after -90° X rotation)
+    STR:  { pos: [4.2, -0.2, 0], look: [0, -0.35, 0], fov: 38 },
+    DIS:  { pos: [0, 0.3, 4.2], look: [0, 0.3, 0], fov: 38 },
   };
   const cam = CAM[mode];
 
