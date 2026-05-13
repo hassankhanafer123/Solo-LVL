@@ -39,39 +39,33 @@ type Pose = Partial<Record<PartName, Transform>>;
 
 const POSE_IDLE: Pose = {};
 
+// INT — standing forward, head down looking at book in both hands
 const POSE_INT: Pose = {
-  root:        { posOffset: [0, -0.55, 0] },
-  head:        { rot: [0.55, 0, 0] },
-  neck:        { rot: [0.15, 0, 0] },
-  torso:       { rot: [0.18, 0, 0] },
-  l_upperarm:  { rot: [-1.1, 0, 0.2] },
-  l_forearm:   { rot: [-0.7, 0, 0] },
-  r_upperarm:  { rot: [-1.1, 0, -0.2] },
-  r_forearm:   { rot: [-0.7, 0, 0] },
-  l_upperleg:  { rot: [-1.4, 0.55, 0], posOffset: [-0.04, 0.05, 0.12] },
-  l_lowerleg:  { rot: [-1.6, 0, -0.4] },
-  r_upperleg:  { rot: [-1.4, -0.55, 0], posOffset: [0.04, 0.05, 0.12] },
-  r_lowerleg:  { rot: [-1.6, 0, 0.4] },
+  head:        { rot: [0.50, 0, 0] },              // head bent down looking at book
+  neck:        { rot: [0.18, 0, 0] },
+  torso:       { rot: [0.12, 0, 0] },              // slight forward lean
+  l_upperarm:  { rot: [-1.45, 0, 0.15] },           // forward, almost horizontal
+  l_forearm:   { rot: [-0.5, 0, 0] },              // bent up at elbow
+  r_upperarm:  { rot: [-1.45, 0, -0.15] },
+  r_forearm:   { rot: [-0.5, 0, 0] },
 };
 
+// STR — horizontal plank (push-up position)
 const POSE_STR: Pose = {
-  root:        { posOffset: [0, -0.45, 0], rot: [-1.45, 0, 0] },
-  head:        { rot: [-0.4, 0, 0] },
-  l_upperarm:  { rot: [1.55, 0, 0.15] },
-  r_upperarm:  { rot: [1.55, 0, -0.15] },
+  root:        { posOffset: [0, -0.35, 0], rot: [-1.55, 0, 0] }, // body rotates to horizontal
+  head:        { rot: [-0.6, 0, 0] },                            // head lifts to look forward
+  l_upperarm:  { rot: [1.55, 0, 0.18] },                          // arms perpendicular to body (supporting)
+  r_upperarm:  { rot: [1.55, 0, -0.18] },
+  // Legs stay extended (rest pose)
 };
 
+// DIS — standing with hands together at chest (prayer / anjali mudra)
 const POSE_DIS: Pose = {
-  root:        { posOffset: [0, -0.5, 0] },
-  head:        { rot: [-0.05, 0, 0] },
-  l_upperarm:  { rot: [-1.0, -0.3, 0.35] },
-  l_forearm:   { rot: [-1.0, 0, -0.55] },
-  r_upperarm:  { rot: [-1.0, 0.3, -0.35] },
-  r_forearm:   { rot: [-1.0, 0, 0.55] },
-  l_upperleg:  { rot: [-1.5, 0.7, 0], posOffset: [-0.02, 0.03, 0.14] },
-  l_lowerleg:  { rot: [-1.7, 0, -0.5] },
-  r_upperleg:  { rot: [-1.5, -0.7, 0], posOffset: [0.02, 0.03, 0.14] },
-  r_lowerleg:  { rot: [-1.7, 0, 0.5] },
+  head:        { rot: [-0.04, 0, 0] },              // very slight head up
+  l_upperarm:  { rot: [-1.55, -0.05, 0.55] },        // forward + slightly inward
+  l_forearm:   { rot: [-0.85, 0, -0.45] },           // bent so hand goes inward
+  r_upperarm:  { rot: [-1.55, 0.05, -0.55] },
+  r_forearm:   { rot: [-0.85, 0, 0.45] },
 };
 
 const POSES: Record<SceneMode, Pose> = {
@@ -207,10 +201,10 @@ export function Mannequin({ mode, pulseTrigger }: { mode: SceneMode; pulseTrigge
     <group ref={setRef("root")} position={REST_POS.root}>
       {/* Per-mode props */}
       {mode === "INT" && (
-        // Book mesh floating in front of the figure where hands meet
-        <group position={[0, 0.7, 0.35]} rotation={[-0.4, 0, 0]}>
+        // Book at chest height between the bent forearms
+        <group position={[0, 0.55, 0.42]} rotation={[-0.5, 0, 0]}>
           <mesh material={propMat}>
-            <boxGeometry args={[0.32, 0.04, 0.24]} />
+            <boxGeometry args={[0.34, 0.04, 0.24]} />
           </mesh>
           {/* Page split line */}
           <mesh position={[0, 0.022, 0]}>
@@ -220,12 +214,11 @@ export function Mannequin({ mode, pulseTrigger }: { mode: SceneMode; pulseTrigge
         </group>
       )}
       {mode === "DIS" && (
-        // Lotus mat under the figure
-        <group position={[0, -0.5, 0]}>
+        // Lotus mat at feet (figure is standing, mat is grounding)
+        <group position={[0, -0.92, 0]}>
           <mesh rotation={[-Math.PI / 2, 0, 0]} material={propMat}>
             <cylinderGeometry args={[0.55, 0.55, 0.04, 32]} />
           </mesh>
-          {/* Inner mandala ring on top of mat */}
           <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.022, 0]}>
             <ringGeometry args={[0.32, 0.36, 32]} />
             <meshBasicMaterial color="#c084fc" transparent opacity={0.7} side={THREE.DoubleSide} toneMapped={false} />
@@ -233,9 +226,9 @@ export function Mannequin({ mode, pulseTrigger }: { mode: SceneMode; pulseTrigge
         </group>
       )}
       {mode === "STR" && (
-        // Ground plane (so the push-up has something to bounce against)
-        <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.5, 0]}>
-          <circleGeometry args={[1.2, 32]} />
+        // Floor below the horizontal plank
+        <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.7, 0]}>
+          <circleGeometry args={[1.4, 32]} />
           <meshStandardMaterial color="#0f172a" roughness={0.7} metalness={0.3} transparent opacity={0.55} />
         </mesh>
       )}

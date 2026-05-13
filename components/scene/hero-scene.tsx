@@ -141,12 +141,15 @@ export function HeroScene({
   const accent = mode === "idle" ? "#60a5fa" : STAT_COLOR[mode];
   const sparkleCount = Math.min(260, 100 + streak * 3);
 
-  // Camera framing per mode — frames the mannequin properly even when it goes horizontal
+  // Camera per mode — angles chosen so each pose is visually obvious
   const CAM: Record<SceneMode, { pos: [number, number, number]; look: [number, number, number]; fov: number }> = {
     idle: { pos: [0, 0.2, 3.2], look: [0, 0.1, 0], fov: 40 },
-    INT:  { pos: [0, 0.25, 2.4], look: [0, 0.05, 0], fov: 38 },
-    STR:  { pos: [0.6, 0.6, 2.3], look: [0, -0.3, 0], fov: 50 }, // angle so plank reads
-    DIS:  { pos: [0, 0.1, 2.5], look: [0, -0.2, 0], fov: 42 },
+    // INT: front, slightly above so we see hands-with-book + bent head
+    INT:  { pos: [0, 0.5, 2.6], look: [0, 0.0, 0], fov: 40 },
+    // STR: PURE SIDE view (camera off to the right) so the horizontal plank reads clearly as a push-up
+    STR:  { pos: [2.6, 0.0, 0.4], look: [0, -0.3, 0], fov: 45 },
+    // DIS: front, eye level, slightly back so the prayer-hands pose reads
+    DIS:  { pos: [0, 0.3, 2.6], look: [0, 0.2, 0], fov: 40 },
   };
   const cam = CAM[mode];
 
