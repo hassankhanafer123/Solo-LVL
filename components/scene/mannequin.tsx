@@ -45,9 +45,12 @@ interface CharacterClipProps {
   url: string;
   visible: boolean;
   color: string;
+  timeScale?: number;
+  /** [start, end] as fractions of total clip duration (0-1). Crops the clip so only this range loops. */
+  loopFraction?: [number, number];
 }
 
-function CharacterClip({ url, visible, color }: CharacterClipProps) {
+function CharacterClip({ url, visible, color, timeScale = 1, loopFraction }: CharacterClipProps) {
   const fbx = useFBX(url);
   const groupRef = useRef<THREE.Group>(null);
   const mixerRef = useRef<THREE.AnimationMixer | null>(null);
@@ -88,19 +91,34 @@ function CharacterClip({ url, visible, color }: CharacterClipProps) {
       }
     });
 
-    // Animation mixer — play the embedded clip on loop
+    // Animation mixer — play the embedded clip on loop.
+    // If loopFraction is provided, crop to that portion of the clip duration so
+    // only the rep cycle loops (e.g. push-up reps without replaying the get-down intro).
     const animations = (fbx.animations ?? []) as THREE.AnimationClip[];
     if (animations.length > 0) {
+      const baseClip = animations[0]!;
+      const fps = 30;
+      const totalFrames = Math.max(2, Math.round(baseClip.duration * fps));
+      let clip = baseClip;
+      if (loopFraction) {
+        const startFrame = Math.max(0, Math.min(totalFrames - 2, Math.floor(totalFrames * loopFraction[0])));
+        const endFrame = Math.max(startFrame + 1, Math.min(totalFrames, Math.ceil(totalFrames * loopFraction[1])));
+        clip = THREE.AnimationUtils.subclip(baseClip, baseClip.name + "_loop", startFrame, endFrame, fps);
+      }
       const mixer = new THREE.AnimationMixer(character);
-      const action = mixer.clipAction(animations[0]!);
+      const action = mixer.clipAction(clip);
       action.reset().setLoop(THREE.LoopRepeat, Infinity).play();
+      action.timeScale = timeScale;
       mixerRef.current = mixer;
+      if (process.env.NODE_ENV !== "production") {
+        console.log(`[mannequin] ${url} clip="${baseClip.name}" duration=${baseClip.duration.toFixed(2)}s frames≈${totalFrames}${loopFraction ? ` → crop ${loopFraction[0]}–${loopFraction[1]}` : ""}`);
+      }
     }
     return () => {
       mixerRef.current?.stopAllAction();
       mixerRef.current = null;
     };
-  }, [character, fbx.animations, color]);
+  }, [character, fbx.animations, color, loopFraction, timeScale, url]);
 
   // Tint emissive each frame so it lerps when stat color changes
   useFrame((_, delta) => {
@@ -115,10 +133,10 @@ function CharacterClip({ url, visible, color }: CharacterClipProps) {
     }
   });
 
-  // Mixamo FBX comes in centimeters; scale 0.01 puts the figure at ~1.8m tall.
-  // Rotate 180° around Y so the character faces the camera (Mixamo's default is +Z forward).
+  // Mixamo FBX is in centimeters; scale ~0.012 → ~2m tall. Mixamo characters face +Z
+  // already, so no Y rotation needed for the camera (which sits at +Z) to see the front.
   return (
-    <group ref={groupRef} scale={0.012} rotation={[0, Math.PI, 0]} position={[0, -0.9, 0]}>
+    <group ref={groupRef} scale={0.012} rotation={[0, 0, 0]} position={[0, -0.9, 0]}>
       <primitive object={character} />
     </group>
   );
@@ -146,10 +164,12 @@ export function Mannequin({ mode, pulseTrigger }: { mode: SceneMode; pulseTrigge
 
   return (
     <group ref={rootRef}>
-      <CharacterClip url="/models/idle.fbx" visible={mode === "idle"} color={color} />
-      <CharacterClip url="/models/int.fbx" visible={mode === "INT"} color={color} />
-      <CharacterClip url="/models/str.fbx" visible={mode === "STR"} color={color} />
-      <CharacterClip url="/models/dis.fbx" visible={mode === "DIS"} color={color} />
+      <CharacterClip url="/models/idle.fbx" visible={mode === "idle"} color={color} timeScale={0.9} />
+      {/* INT thinking: full clip plays — Mixamo "Thinking" is already a clean loop, just slow it */}
+      <CharacterClip url="/models/int.fbx" visible={mode === "INT"} color={color} timeScale={0.5} />
+      {/* STR push-up: skip the get-down intro (first ~50%), loop only the rep portion */}
+      <CharacterClip url="/models/str.fbx" visible={mode === "STR"} color={color} timeScale={1.0} loopFraction={[0.5, 1.0]} />
+      <CharacterClip url="/models/dis.fbx" visible={mode === "DIS"} color={color} timeScale={0.6} />
     </group>
   );
 }

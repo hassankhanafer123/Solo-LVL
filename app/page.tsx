@@ -13,7 +13,11 @@ import {
   RotateCcw,
   ChevronDown,
   AlertTriangle,
+  Trash2,
+  X,
+  Calendar,
 } from "lucide-react";
+import { getCurrentWeekStart, daysOfWeek } from "@/lib/time";
 import confetti from "canvas-confetti";
 import { cn } from "@/lib/utils";
 import type { StatKind } from "@/lib/types";
@@ -35,6 +39,8 @@ type Control =
   | { kind: "count"; actual: number; target: number }
   | { kind: "timer"; elapsedSec: number; targetMin: number; running: boolean };
 
+type Cadence = "daily" | "weekly";
+
 type Quest = {
   id: string;
   name: string;
@@ -42,8 +48,39 @@ type Quest = {
   baseXp: number;
   required: boolean;
   penalty?: boolean;
+  cadence: Cadence;
+  /** Days of week this quest runs (Mon=0..Sun=6). Empty or undefined = every day. Only meaningful for daily cadence. */
+  days?: number[];
   control: Control;
 };
+
+/**
+ * XP is locked — computed from the quest's other fields so it can't be gamed.
+ *   - checkbox: flat 25 XP
+ *   - count:    max(15, target × 0.5)
+ *   - timer:    max(15, target_min × 0.85)
+ *   - weekly cadence × 1.5
+ *   - penalty   × 1.5
+ */
+function computeXp(q: Pick<Quest, "control" | "cadence" | "penalty">): number {
+  let base = 25;
+  if (q.control.kind === "count") base = Math.max(15, Math.round(q.control.target * 0.5));
+  else if (q.control.kind === "timer") base = Math.max(15, Math.round(q.control.targetMin * 0.85));
+  if (q.cadence === "weekly") base = Math.round(base * 1.5);
+  if (q.penalty) base = Math.round(base * 1.5);
+  return base;
+}
+
+/** JS Date.getDay() returns 0=Sun..6=Sat; we want Mon=0..Sun=6. */
+function dayOfWeekMon0(d: Date): number {
+  return (d.getDay() + 6) % 7;
+}
+
+/** Whether a quest is active today, given its days[] selection (empty/undefined = every day). */
+function activeToday(q: Quest, today: Date): boolean {
+  if (!q.days || q.days.length === 0) return true;
+  return q.days.includes(dayOfWeekMon0(today));
+}
 
 type SectionMode = "hero" | Stat | "summary";
 
@@ -59,14 +96,16 @@ const STAT_META: Record<
 };
 
 const INITIAL_QUESTS: Quest[] = [
-  { id: "q1", name: "Study", stat: "INT", baseXp: 75, required: true, control: { kind: "timer", elapsedSec: 0, targetMin: 90, running: false } },
-  { id: "q2", name: "Read", stat: "INT", baseXp: 25, required: false, control: { kind: "timer", elapsedSec: 0, targetMin: 30, running: false } },
-  { id: "q3", name: "Push-ups", stat: "STR", baseXp: 50, required: true, control: { kind: "count", actual: 0, target: 100 } },
-  { id: "q4", name: "Sit-ups", stat: "STR", baseXp: 50, required: true, control: { kind: "count", actual: 0, target: 100 } },
-  { id: "q5", name: "Run (km)", stat: "STR", baseXp: 75, required: true, control: { kind: "count", actual: 0, target: 5 } },
-  { id: "q6", name: "Squats (penalty +50%)", stat: "STR", baseXp: 75, required: true, penalty: true, control: { kind: "count", actual: 0, target: 150 } },
-  { id: "q7", name: "Meditate", stat: "DIS", baseXp: 50, required: true, control: { kind: "timer", elapsedSec: 0, targetMin: 10, running: false } },
-  { id: "q8", name: "No phone after 11pm", stat: "DIS", baseXp: 30, required: true, control: { kind: "checkbox", done: false } },
+  { id: "q1", name: "Study", stat: "INT", baseXp: 75, required: true, cadence: "daily", control: { kind: "timer", elapsedSec: 0, targetMin: 90, running: false } },
+  { id: "q2", name: "Read", stat: "INT", baseXp: 25, required: false, cadence: "daily", control: { kind: "timer", elapsedSec: 0, targetMin: 30, running: false } },
+  { id: "q3", name: "Push-ups", stat: "STR", baseXp: 50, required: true, cadence: "daily", control: { kind: "count", actual: 0, target: 100 } },
+  { id: "q4", name: "Sit-ups", stat: "STR", baseXp: 50, required: true, cadence: "daily", control: { kind: "count", actual: 0, target: 100 } },
+  { id: "q5", name: "Run (km)", stat: "STR", baseXp: 75, required: true, cadence: "daily", control: { kind: "count", actual: 0, target: 5 } },
+  { id: "q6", name: "Squats (penalty +50%)", stat: "STR", baseXp: 75, required: true, penalty: true, cadence: "daily", control: { kind: "count", actual: 0, target: 150 } },
+  // DIS quests now run on a weekly cadence — actual accumulates across 7 days,
+  // XP awards once when the weekly target is hit.
+  { id: "q7", name: "Meditate (min/week)", stat: "DIS", baseXp: 100, required: true, cadence: "weekly", control: { kind: "count", actual: 0, target: 70 } },
+  { id: "q8", name: "No phone after 11pm", stat: "DIS", baseXp: 50, required: true, cadence: "weekly", control: { kind: "count", actual: 0, target: 7 } },
 ];
 
 const INITIAL_PLAYER = {
@@ -90,6 +129,16 @@ function isQuestDone(c: Control): boolean {
   return c.elapsedSec / 60 >= c.targetMin;
 }
 
+/** Zero out per-period progress when cloning a plan into a new week. */
+function resetQuestProgress(q: Quest): Quest {
+  if (q.control.kind === "checkbox") return { ...q, control: { kind: "checkbox", done: false } };
+  if (q.control.kind === "count")
+    return { ...q, control: { ...q.control, actual: 0 } };
+  return { ...q, control: { ...q.control, elapsedSec: 0, running: false } };
+}
+
+const DOW_LABELS = ["M", "T", "W", "T", "F", "S", "S"];
+
 const STAT_HEX: Record<Stat, [string, string, string]> = {
   INT: ["#60a5fa", "#1d4ed8", "rgba(59,130,246,0.5)"],
   STR: ["#fb7185", "#e11d48", "rgba(244,63,94,0.5)"],
@@ -107,6 +156,51 @@ export default function Dashboard() {
   const [burstId, setBurstId] = useState(0);
   const [pulseTrigger, setPulseTrigger] = useState(0);
   const [section, setSection] = useState<SectionMode>("hero");
+  const [planOpen, setPlanOpen] = useState(false);
+  const [newWeekBanner, setNewWeekBanner] = useState(false);
+  const [weekStart, setWeekStart] = useState<string>("");
+
+  // Load persisted plan on mount; if the week has rolled over since last visit,
+  // carry-forward last week's plan and show the new-week banner.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const tz = "America/New_York";
+    const currentWeek = getCurrentWeekStart(new Date(), tz, 4);
+    setWeekStart(currentWeek);
+    const lastSeenWeek = localStorage.getItem("slvl.lastSeenWeek");
+    const planKey = `slvl.plan.${currentWeek}`;
+    const stored = localStorage.getItem(planKey);
+    if (stored) {
+      try {
+        setQuests(JSON.parse(stored));
+      } catch {
+        setQuests(INITIAL_QUESTS);
+      }
+    } else {
+      // First visit of this week: clone from previous week's plan if it exists
+      const prevKey = lastSeenWeek ? `slvl.plan.${lastSeenWeek}` : null;
+      const prev = prevKey ? localStorage.getItem(prevKey) : null;
+      let carried = INITIAL_QUESTS;
+      if (prev) {
+        try {
+          // Reset progress on carry-forward; keep names/targets/cadences
+          carried = (JSON.parse(prev) as Quest[]).map(resetQuestProgress);
+        } catch {}
+      }
+      setQuests(carried);
+      localStorage.setItem(planKey, JSON.stringify(carried));
+    }
+    if (lastSeenWeek && lastSeenWeek !== currentWeek) {
+      setNewWeekBanner(true);
+    }
+    localStorage.setItem("slvl.lastSeenWeek", currentWeek);
+  }, []);
+
+  // Persist plan changes back to localStorage
+  useEffect(() => {
+    if (!weekStart || typeof window === "undefined") return;
+    localStorage.setItem(`slvl.plan.${weekStart}`, JSON.stringify(quests));
+  }, [quests, weekStart]);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const { scrollYProgress } = useScroll({ target: containerRef, offset: ["start start", "end end"] });
@@ -141,14 +235,20 @@ export default function Dashboard() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const requiredQuests = useMemo(() => quests.filter((q) => q.required), [quests]);
+  const today = useMemo(() => new Date(), []);
+  const dailyQuests = useMemo(
+    () => quests.filter((q) => q.cadence === "daily" && activeToday(q, today)),
+    [quests, today],
+  );
+  const weeklyQuests = useMemo(() => quests.filter((q) => q.cadence === "weekly"), [quests]);
+  const requiredQuests = useMemo(() => dailyQuests.filter((q) => q.required), [dailyQuests]);
   const completedRequired = requiredQuests.filter((q) => isQuestDone(q.control)).length;
   const totalRequired = requiredQuests.length;
   const remaining = totalRequired - completedRequired;
   const cleared = remaining === 0;
   const totalXpToday = useMemo(
-    () => quests.filter((q) => isQuestDone(q.control)).reduce((s, q) => s + q.baseXp, 0),
-    [quests],
+    () => dailyQuests.filter((q) => isQuestDone(q.control)).reduce((s, q) => s + q.baseXp, 0),
+    [dailyQuests],
   );
   const activeMinutes = useMemo(() => {
     let m = 0;
@@ -282,6 +382,14 @@ export default function Dashboard() {
             Lv {player.level}
           </span>
           <button
+            onClick={() => setPlanOpen(true)}
+            data-cursor="hover"
+            className="flex items-center gap-1.5 rounded-full border border-white/10 bg-slate-950/60 px-3 py-1.5 font-mono text-[10px] tracking-[0.2em] uppercase text-slate-300 hover:bg-white/10 transition-colors backdrop-blur-xl"
+          >
+            <Calendar className="h-3 w-3" strokeWidth={2.5} />
+            Plan Week
+          </button>
+          <button
             onClick={resetDay}
             data-cursor="hover"
             className="flex items-center gap-1.5 rounded-full border border-white/10 bg-slate-950/60 px-3 py-1.5 font-mono text-[10px] tracking-[0.2em] uppercase text-slate-300 hover:bg-white/10 transition-colors backdrop-blur-xl"
@@ -291,6 +399,53 @@ export default function Dashboard() {
           </button>
         </div>
       </header>
+
+      {/* New-week banner */}
+      <AnimatePresence>
+        {newWeekBanner && (
+          <motion.div
+            initial={{ y: -40, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            exit={{ y: -40, opacity: 0 }}
+            transition={{ type: "spring", stiffness: 200, damping: 22 }}
+            className="fixed top-20 inset-x-0 z-30 flex justify-center px-4 pointer-events-none"
+          >
+            <div className="pointer-events-auto flex items-center gap-3 rounded-full border border-blue-500/40 bg-slate-950/85 backdrop-blur-xl px-4 py-2.5 shadow-2xl shadow-blue-500/20">
+              <Sparkles className="h-4 w-4 text-blue-300" strokeWidth={2.5} />
+              <span className="font-mono text-[10px] tracking-[0.3em] uppercase text-slate-200">
+                NEW WEEK · Last week&apos;s plan copied in.
+              </span>
+              <button
+                onClick={() => {
+                  setNewWeekBanner(false);
+                  setPlanOpen(true);
+                }}
+                data-cursor="hover"
+                className="rounded-full bg-blue-500 px-3 py-1 font-mono text-[10px] tracking-[0.3em] uppercase text-white hover:bg-blue-400 transition-colors"
+              >
+                Edit →
+              </button>
+              <button
+                onClick={() => setNewWeekBanner(false)}
+                data-cursor="hover"
+                aria-label="Dismiss"
+                className="text-slate-400 hover:text-white transition-colors"
+              >
+                <X className="h-4 w-4" strokeWidth={2.5} />
+              </button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Plan-this-week modal */}
+      <PlanEditor
+        open={planOpen}
+        onClose={() => setPlanOpen(false)}
+        quests={quests}
+        weekStart={weekStart}
+        onChange={setQuests}
+      />
 
       {/* === Fixed side scroll-nav (desktop) === */}
       <nav className="fixed left-6 top-1/2 -translate-y-1/2 z-30 hidden lg:flex flex-col gap-3">
@@ -394,7 +549,7 @@ export default function Dashboard() {
           <BodyPartSection
             stat="INT"
             value={player.stats.INT}
-            quests={quests.filter((q) => q.stat === "INT")}
+            quests={dailyQuests.filter((q) => q.stat === "INT")}
             onCheck={toggleCheckbox}
             onBump={bumpCount}
             onTimer={toggleTimer}
@@ -407,7 +562,7 @@ export default function Dashboard() {
           <BodyPartSection
             stat="STR"
             value={player.stats.STR}
-            quests={quests.filter((q) => q.stat === "STR")}
+            quests={dailyQuests.filter((q) => q.stat === "STR")}
             onCheck={toggleCheckbox}
             onBump={bumpCount}
             onTimer={toggleTimer}
@@ -415,15 +570,13 @@ export default function Dashboard() {
           />
         </Section>
 
-        {/* SECTION: DISCIPLINE */}
+        {/* SECTION: DISCIPLINE — weekly cadence, separate UI */}
         <Section id="DIS">
-          <BodyPartSection
-            stat="DIS"
+          <DisciplineWeekSection
             value={player.stats.DIS}
-            quests={quests.filter((q) => q.stat === "DIS")}
-            onCheck={toggleCheckbox}
+            quests={weeklyQuests.filter((q) => q.stat === "DIS")}
+            weekStart={weekStart}
             onBump={bumpCount}
-            onTimer={toggleTimer}
             onHover={setHoveredStat}
           />
         </Section>
@@ -874,4 +1027,402 @@ function fmtMmSs(sec: number) {
   const m = Math.floor(sec / 60);
   const s = sec % 60;
   return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+}
+
+/* -------- Discipline weekly section -------- */
+
+function DisciplineWeekSection({
+  value,
+  quests,
+  weekStart,
+  onBump,
+  onHover,
+}: {
+  value: number;
+  quests: Quest[];
+  weekStart: string;
+  onBump: (id: string, delta: number, e?: React.MouseEvent) => void;
+  onHover: (s: Stat | null) => void;
+}) {
+  const meta = STAT_META.DIS;
+  const days = weekStart ? daysOfWeek(weekStart) : [];
+  const todayISO = new Date().toISOString().slice(0, 10);
+  const todayIdx = days.findIndex((d) => d === todayISO);
+
+  return (
+    <div
+      className="grid grid-cols-12 gap-6 items-center"
+      onMouseEnter={() => onHover("DIS")}
+      onMouseLeave={() => onHover(null)}
+    >
+      <motion.div
+        initial={{ opacity: 0, x: -32 }}
+        whileInView={{ opacity: 1, x: 0 }}
+        viewport={{ once: false, margin: "-25%" }}
+        transition={{ duration: 0.9, ease: [0.22, 1, 0.36, 1] }}
+        className="col-span-12 lg:col-span-7"
+      >
+        <div className="font-mono text-[11px] tracking-[0.5em] uppercase mb-4 flex items-center gap-3" style={{ color: STAT_HEX.DIS[0] }}>
+          <span className="tabular-nums">03</span>
+          <span className="block h-px w-8 opacity-50" style={{ backgroundColor: STAT_HEX.DIS[0] }} />
+          <span>This Week</span>
+        </div>
+        <h2 className="text-mega text-[clamp(54px,11vw,160px)] text-white leading-[0.85]">Discipline.</h2>
+        <p className="mt-6 max-w-md text-slate-400 text-base leading-relaxed">
+          Habits compound across days. Track weekly targets — XP awards when the week is complete.
+        </p>
+        <div className="mt-8 max-w-md">
+          <div className="flex items-baseline justify-between font-mono text-[10px] tracking-[0.3em] uppercase text-slate-500 mb-2">
+            <span>DIS score</span>
+            <span style={{ color: STAT_HEX.DIS[0] }} className="text-base font-bold tabular-nums">{value}</span>
+          </div>
+          <div className="h-1.5 overflow-hidden rounded-full bg-white/5">
+            <motion.div
+              initial={{ width: 0 }}
+              whileInView={{ width: `${Math.min(100, (value / 60) * 100)}%` }}
+              viewport={{ once: false }}
+              transition={{ duration: 1.2, delay: 0.4 }}
+              className={cn("h-full rounded-full bg-gradient-to-r", meta.bar)}
+            />
+          </div>
+        </div>
+      </motion.div>
+
+      <motion.div
+        initial={{ opacity: 0, x: 32 }}
+        whileInView={{ opacity: 1, x: 0 }}
+        viewport={{ once: false, margin: "-25%" }}
+        transition={{ duration: 0.9, delay: 0.15, ease: [0.22, 1, 0.36, 1] }}
+        className="col-span-12 lg:col-span-5 space-y-3"
+      >
+        <div className="font-mono text-[10px] tracking-[0.3em] uppercase text-slate-500 mb-2">
+          This week&apos;s discipline · {weekStart}
+        </div>
+        {quests.length === 0 && (
+          <div className="rounded-2xl border border-white/10 bg-slate-950/55 px-5 py-6 backdrop-blur-xl">
+            <p className="text-sm text-slate-300">No weekly habits set.</p>
+            <p className="mt-1 text-xs text-slate-500">Add some in the planner above.</p>
+          </div>
+        )}
+        {quests.map((q) => (
+          <WeeklyQuestCard
+            key={q.id}
+            quest={q}
+            todayIdx={todayIdx < 0 ? -1 : todayIdx}
+            onBump={(d, e) => onBump(q.id, d, e)}
+          />
+        ))}
+      </motion.div>
+    </div>
+  );
+}
+
+function WeeklyQuestCard({
+  quest,
+  todayIdx,
+  onBump,
+}: {
+  quest: Quest;
+  todayIdx: number;
+  onBump: (delta: number, e?: React.MouseEvent) => void;
+}) {
+  if (quest.control.kind !== "count") return null;
+  const { actual, target } = quest.control;
+  const done = actual >= target;
+  const pct = Math.min(100, (actual / target) * 100);
+
+  return (
+    <motion.div
+      data-quest-card
+      layout
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ type: "spring", stiffness: 220, damping: 20 }}
+      className={cn(
+        "rounded-2xl border px-5 py-4 backdrop-blur-xl transition-colors",
+        done ? "border-emerald-500/40 bg-emerald-500/5" : "border-white/10 bg-slate-950/55",
+      )}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <div className={cn("text-base font-semibold leading-tight tracking-tight", done ? "text-emerald-300" : "text-white")}>
+            {quest.name}
+          </div>
+          <div className="mt-1 flex items-center gap-2 text-[10px] font-mono tracking-widest uppercase text-slate-500">
+            <Sparkles className="h-3 w-3 text-purple-300" strokeWidth={2.5} />
+            +{quest.baseXp} XP when complete
+          </div>
+        </div>
+        <div className="shrink-0 flex items-center gap-1.5">
+          <motion.button
+            type="button"
+            onClick={(e) => onBump(-1, e)}
+            whileTap={{ scale: 0.88 }}
+            data-cursor="hover"
+            disabled={actual === 0}
+            className="flex h-10 w-10 items-center justify-center rounded-xl border border-white/15 bg-white/5 text-slate-300 hover:border-white/30 disabled:opacity-30"
+          >
+            <Minus className="h-4 w-4" strokeWidth={2.5} />
+          </motion.button>
+          <motion.button
+            type="button"
+            onClick={(e) => onBump(+1, e)}
+            whileTap={{ scale: 0.88 }}
+            data-cursor="hover"
+            className={cn(
+              "flex h-10 w-10 items-center justify-center rounded-xl border-2",
+              done ? "border-emerald-400/60 bg-emerald-500/20 text-emerald-300" : "border-purple-500/60 bg-purple-500/15 text-purple-200 hover:bg-purple-500/25",
+            )}
+          >
+            <Plus className="h-4 w-4" strokeWidth={3} />
+          </motion.button>
+        </div>
+      </div>
+
+      {/* Progress bar */}
+      <div className="mt-3 flex items-center gap-3">
+        <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-white/5">
+          <motion.div
+            initial={false}
+            animate={{ width: `${pct}%` }}
+            transition={{ type: "spring", stiffness: 90, damping: 18 }}
+            className={cn("h-full rounded-full", done ? "bg-emerald-500" : "bg-gradient-to-r from-purple-500 to-fuchsia-500")}
+          />
+        </div>
+        <div className="font-mono text-[10px] tabular-nums text-slate-400 min-w-[64px] text-right">
+          <span className={done ? "text-emerald-300" : "text-white font-bold"}>{actual}</span>
+          <span className="text-slate-600"> / {target}</span>
+        </div>
+      </div>
+
+      {/* Day-of-week dots */}
+      <div className="mt-3 flex items-center justify-between gap-1">
+        {DOW_LABELS.map((d, i) => {
+          const isToday = i === todayIdx;
+          const filled = Math.min(actual, target) > 0 && i < Math.ceil((actual / target) * 7);
+          return (
+            <div key={i} className="flex flex-col items-center gap-1">
+              <span className={cn("h-1.5 w-1.5 rounded-full", filled ? "bg-purple-400" : "bg-white/15", isToday && !filled && "ring-2 ring-purple-400/60")} />
+              <span className={cn("font-mono text-[9px] tracking-widest", isToday ? "text-purple-300" : "text-slate-600")}>{d}</span>
+            </div>
+          );
+        })}
+      </div>
+    </motion.div>
+  );
+}
+
+/* -------- Plan editor modal -------- */
+
+function PlanEditor({
+  open,
+  onClose,
+  quests,
+  weekStart,
+  onChange,
+}: {
+  open: boolean;
+  onClose: () => void;
+  quests: Quest[];
+  weekStart: string;
+  onChange: (qs: Quest[]) => void;
+}) {
+  /** Apply a quest patch and re-lock its XP from the resulting fields. */
+  function patchQuest(id: string, patch: (q: Quest) => Quest) {
+    onChange(
+      quests.map((q) => {
+        if (q.id !== id) return q;
+        const next = patch(q);
+        return { ...next, baseXp: computeXp(next) };
+      }),
+    );
+  }
+  function updateField<K extends keyof Quest>(id: string, key: K, value: Quest[K]) {
+    patchQuest(id, (q) => ({ ...q, [key]: value }));
+  }
+  function updateTarget(id: string, target: number) {
+    patchQuest(id, (q) => {
+      if (q.control.kind === "count") return { ...q, control: { ...q.control, target } };
+      if (q.control.kind === "timer") return { ...q, control: { ...q.control, targetMin: target } };
+      return q;
+    });
+  }
+  function toggleDay(id: string, dow: number) {
+    patchQuest(id, (q) => {
+      const cur = q.days ?? [0, 1, 2, 3, 4, 5, 6];
+      const next = cur.includes(dow) ? cur.filter((d) => d !== dow) : [...cur, dow].sort();
+      return { ...q, days: next };
+    });
+  }
+  function remove(id: string) {
+    onChange(quests.filter((q) => q.id !== id));
+  }
+  function addNew() {
+    const base: Omit<Quest, "baseXp"> = {
+      id: `q-${Date.now()}`,
+      name: "New quest",
+      stat: "INT",
+      required: true,
+      cadence: "daily",
+      control: { kind: "count", actual: 0, target: 1 },
+    };
+    const newQuest: Quest = { ...base, baseXp: computeXp(base) };
+    onChange([...quests, newQuest]);
+  }
+
+  return (
+    <AnimatePresence>
+      {open && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-950/85 backdrop-blur-xl p-6 pt-20"
+          onClick={onClose}
+        >
+          <motion.div
+            initial={{ y: 30, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            exit={{ y: 30, opacity: 0 }}
+            transition={{ type: "spring", stiffness: 220, damping: 24 }}
+            className="w-full max-w-3xl rounded-3xl border border-white/10 bg-slate-950/95 p-8 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between gap-4 mb-6">
+              <div>
+                <div className="font-mono text-[10px] tracking-[0.4em] uppercase text-blue-300 mb-1">
+                  Week of {weekStart}
+                </div>
+                <h2 className="text-3xl font-bold text-white">Plan this week</h2>
+              </div>
+              <button
+                onClick={onClose}
+                data-cursor="hover"
+                aria-label="Close"
+                className="rounded-full border border-white/10 bg-white/5 p-2 text-slate-300 hover:bg-white/10 transition-colors"
+              >
+                <X className="h-4 w-4" strokeWidth={2.5} />
+              </button>
+            </div>
+
+            <div className="space-y-3 max-h-[60vh] overflow-y-auto pr-2">
+              {quests.map((q) => {
+                const activeDays = q.days ?? [0, 1, 2, 3, 4, 5, 6];
+                return (
+                  <div
+                    key={q.id}
+                    className={cn(
+                      "rounded-2xl border px-4 py-3 transition-colors",
+                      q.cadence === "weekly" ? "border-purple-500/30 bg-purple-500/5" : "border-white/10 bg-white/5",
+                    )}
+                  >
+                    <div className="grid grid-cols-12 gap-3 items-center">
+                      <input
+                        type="text"
+                        value={q.name}
+                        onChange={(e) => updateField(q.id, "name", e.target.value)}
+                        className="col-span-12 md:col-span-4 rounded-lg border border-white/10 bg-slate-950/60 px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-400"
+                      />
+                      <select
+                        value={q.stat}
+                        onChange={(e) => updateField(q.id, "stat", e.target.value as Stat)}
+                        className="col-span-4 md:col-span-2 rounded-lg border border-white/10 bg-slate-950/60 px-2 py-2 text-xs text-white focus:outline-none focus:border-blue-400"
+                      >
+                        <option value="INT">INT</option>
+                        <option value="STR">STR</option>
+                        <option value="DIS">DIS</option>
+                      </select>
+                      <select
+                        value={q.cadence}
+                        onChange={(e) => updateField(q.id, "cadence", e.target.value as Cadence)}
+                        className="col-span-4 md:col-span-2 rounded-lg border border-white/10 bg-slate-950/60 px-2 py-2 text-xs text-white focus:outline-none focus:border-blue-400"
+                      >
+                        <option value="daily">Daily</option>
+                        <option value="weekly">Weekly</option>
+                      </select>
+                      <input
+                        type="number"
+                        min={1}
+                        value={q.control.kind === "count" ? q.control.target : q.control.kind === "timer" ? q.control.targetMin : 0}
+                        onChange={(e) => updateTarget(q.id, Number(e.target.value) || 0)}
+                        disabled={q.control.kind === "checkbox"}
+                        placeholder="target"
+                        className="col-span-4 md:col-span-2 rounded-lg border border-white/10 bg-slate-950/60 px-2 py-2 text-xs text-white focus:outline-none focus:border-blue-400 disabled:opacity-40"
+                      />
+                      {/* Locked XP — computed, read-only */}
+                      <div
+                        title="XP is auto-calculated from cadence × target × penalty"
+                        className="col-span-8 md:col-span-1 flex items-center justify-center gap-1 rounded-lg border border-blue-500/30 bg-blue-500/10 px-2 py-2 text-xs font-mono text-blue-200"
+                      >
+                        <Sparkles className="h-3 w-3" strokeWidth={2.5} />
+                        {q.baseXp}
+                      </div>
+                      <button
+                        onClick={() => remove(q.id)}
+                        data-cursor="hover"
+                        aria-label="Remove"
+                        className="col-span-4 md:col-span-1 flex items-center justify-center rounded-lg border border-red-500/30 bg-red-500/10 px-2 py-2 text-red-300 hover:bg-red-500/20 transition-colors"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" strokeWidth={2.5} />
+                      </button>
+                    </div>
+
+                    {/* Days-of-week picker (daily quests only) */}
+                    {q.cadence === "daily" && (
+                      <div className="mt-3 flex items-center gap-2 pl-1">
+                        <span className="font-mono text-[9px] tracking-[0.3em] uppercase text-slate-500 mr-1">
+                          Days
+                        </span>
+                        {DOW_LABELS.map((label, dow) => {
+                          const on = activeDays.includes(dow);
+                          return (
+                            <button
+                              key={dow}
+                              type="button"
+                              onClick={() => toggleDay(q.id, dow)}
+                              data-cursor="hover"
+                              aria-pressed={on}
+                              className={cn(
+                                "h-7 w-7 rounded-full font-mono text-[10px] font-bold transition-all",
+                                on
+                                  ? "bg-blue-500 text-white shadow-md shadow-blue-500/30"
+                                  : "border border-white/10 bg-white/5 text-slate-500 hover:border-white/30 hover:text-slate-200",
+                              )}
+                            >
+                              {label}
+                            </button>
+                          );
+                        })}
+                        <span className="ml-auto font-mono text-[9px] tracking-widest text-slate-500">
+                          {activeDays.length === 7 ? "every day" : `${activeDays.length}× / week`}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="mt-6 flex items-center justify-between gap-3">
+              <button
+                onClick={addNew}
+                data-cursor="hover"
+                className="flex items-center gap-2 rounded-full border border-white/15 bg-white/5 px-4 py-2 font-mono text-[10px] tracking-[0.3em] uppercase text-slate-200 hover:bg-white/10 transition-colors"
+              >
+                <Plus className="h-3.5 w-3.5" strokeWidth={2.5} />
+                Add quest
+              </button>
+              <button
+                onClick={onClose}
+                data-cursor="hover"
+                className="rounded-full bg-blue-500 px-5 py-2 font-mono text-[10px] tracking-[0.3em] uppercase text-white hover:bg-blue-400 transition-colors"
+              >
+                Done
+              </button>
+            </div>
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>
+  );
 }

@@ -9,6 +9,9 @@ export type CompletionType = (typeof COMPLETION_TYPES)[number];
 export const DAILY_STATUSES = ['pending', 'cleared', 'missed'] as const;
 export type DailyStatus = (typeof DAILY_STATUSES)[number];
 
+export const CADENCES = ['daily', 'weekly'] as const;
+export type Cadence = (typeof CADENCES)[number];
+
 export interface Profile {
   user_id: string;
   display_name: string;
@@ -33,6 +36,7 @@ export interface Profile {
 export interface QuestTemplate {
   id: string;
   user_id: string;
+  week_plan_id: string;
   name: string;
   completion_type: CompletionType;
   target_value: number | null;
@@ -41,6 +45,38 @@ export interface QuestTemplate {
   is_required: boolean;
   sort_order: number;
   active: boolean;
+  cadence: Cadence;
+}
+
+export interface WeekPlan {
+  id: string;
+  user_id: string;
+  week_start_date: string;
+  created_at: string;
+}
+
+export interface WeeklyLog {
+  id: string;
+  user_id: string;
+  week_start_date: string;
+  status: DailyStatus;
+  cleared_at: string | null;
+}
+
+export interface WeeklyQuestInstance {
+  id: string;
+  user_id: string;
+  weekly_log_id: string;
+  template_id: string | null;
+  name: string;
+  completion_type: CompletionType;
+  target_value: number | null;
+  actual_value: number;
+  primary_stat: StatKind;
+  base_xp: number;
+  xp_awarded: number;
+  completed: boolean;
+  completed_at: string | null;
 }
 
 export interface QuestInstance {
@@ -86,5 +122,6 @@ export const TemplateInputSchema = z.object({
   base_xp: z.number().int().min(0).max(1000),
   is_required: z.boolean(),
   sort_order: z.number().int().min(0),
+  cadence: z.enum(CADENCES).default('daily'),
 });
 export type TemplateInput = z.infer<typeof TemplateInputSchema>;

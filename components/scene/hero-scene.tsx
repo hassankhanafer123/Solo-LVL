@@ -141,12 +141,13 @@ export function HeroScene({
   const accent = mode === "idle" ? "#60a5fa" : STAT_COLOR[mode];
   const sparkleCount = Math.min(260, 100 + streak * 3);
 
-  // Figure now spans y ≈ -0.85 (feet) → +1.62 (head top), center at y=0.4
+  // Figure stands ~2m tall, feet at y≈-0.9, head at y≈1.1.
+  // All cameras sit on +Z so Mixamo's default forward-facing rig faces them.
   const CAM: Record<SceneMode, { pos: [number, number, number]; look: [number, number, number]; fov: number }> = {
-    idle: { pos: [0, 0.4, 5.0], look: [0, 0.4, 0], fov: 36 },
-    INT:  { pos: [0, 0.5, 4.6], look: [0, 0.4, 0], fov: 36 },
-    STR:  { pos: [5.0, -0.4, 0], look: [0, -0.4, 0], fov: 36 },
-    DIS:  { pos: [0, 0.4, 4.6], look: [0, 0.4, 0], fov: 36 },
+    idle: { pos: [0, 0.3, 4.4], look: [0, 0.3, 0], fov: 34 },              // full body, front
+    INT:  { pos: [0, 0.7, 3.6], look: [0, 0.6, 0], fov: 32 },              // head + chest + clasped hands visible
+    STR:  { pos: [2.4, -0.4, 3.4], look: [0, -0.7, 0], fov: 38 },          // low 3/4 angle on horizontal push-up body
+    DIS:  { pos: [0, -0.1, 3.8], look: [0, -0.3, 0], fov: 34 },            // front view of cross-legged sit
   };
   const cam = CAM[mode];
 

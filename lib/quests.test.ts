@@ -11,6 +11,7 @@ import type { QuestTemplate, QuestInstance } from './types';
 const tmpl = (over: Partial<QuestTemplate> = {}): QuestTemplate => ({
   id: 't1',
   user_id: 'u1',
+  week_plan_id: 'wp1',
   name: 'Push-ups',
   completion_type: 'count',
   target_value: 100,
@@ -19,6 +20,7 @@ const tmpl = (over: Partial<QuestTemplate> = {}): QuestTemplate => ({
   is_required: true,
   sort_order: 1,
   active: true,
+  cadence: 'daily',
   ...over,
 });
 
