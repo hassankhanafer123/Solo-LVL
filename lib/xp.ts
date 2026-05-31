@@ -19,7 +19,15 @@ const TITLE_THRESHOLDS: ReadonlyArray<readonly [number, Title]> = [
 
 export function xpToNext(level: number): number {
   if (level < 1) throw new Error('level must be >= 1');
-  return Math.ceil(100 * Math.pow(1.4, level - 1));
+  return Math.ceil(150 * Math.pow(1.15, level - 1));
+}
+
+export interface WeeklyLevelInput { level: number; completionPct: number; }
+export interface WeeklyLevelResult { leveledUp: boolean; newLevel: number; }
+/** Leveling v2: a week with >=85% completion grants one level. */
+export function decideWeeklyLevelUp(input: WeeklyLevelInput): WeeklyLevelResult {
+  if (input.completionPct >= 0.85) return { leveledUp: true, newLevel: input.level + 1 };
+  return { leveledUp: false, newLevel: input.level };
 }
 
 export function titleForLevel(level: number): Title {

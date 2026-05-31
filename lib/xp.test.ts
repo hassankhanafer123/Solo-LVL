@@ -4,16 +4,17 @@ import {
   applyXpGain,
   titleForLevel,
   TITLE_BONUS,
+  decideWeeklyLevelUp,
 } from './xp';
 
 describe('xpToNext', () => {
-  it('returns 100 at level 1', () => {
-    expect(xpToNext(1)).toBe(100);
+  it('returns 150 at level 1', () => {
+    expect(xpToNext(1)).toBe(150);
   });
-  it('scales by 1.4x per level', () => {
-    expect(xpToNext(2)).toBe(Math.ceil(100 * 1.4));
-    expect(xpToNext(3)).toBe(Math.ceil(100 * 1.4 ** 2));
-    expect(xpToNext(10)).toBe(Math.ceil(100 * 1.4 ** 9));
+  it('scales by 1.15x per level', () => {
+    expect(xpToNext(2)).toBe(Math.ceil(150 * 1.15));   // 173
+    expect(xpToNext(3)).toBe(Math.ceil(150 * 1.15 ** 2)); // 199
+    expect(xpToNext(10)).toBe(Math.ceil(150 * 1.15 ** 9)); // 528
   });
 });
 
@@ -49,7 +50,7 @@ describe('applyXpGain', () => {
     level: 1,
     total_xp: 0,
     xp_in_level: 0,
-    xp_to_next: 100,
+    xp_to_next: 150,
     unallocated_points: 0,
     title: 'Novice' as const,
   };
@@ -64,10 +65,10 @@ describe('applyXpGain', () => {
   });
 
   it('levels up exactly once when crossing threshold', () => {
-    const r = applyXpGain(baseProfile, 100);
+    const r = applyXpGain(baseProfile, 150);
     expect(r.level).toBe(2);
     expect(r.xp_in_level).toBe(0);
-    expect(r.xp_to_next).toBe(Math.ceil(100 * 1.4));
+    expect(r.xp_to_next).toBe(Math.ceil(150 * 1.15)); // 173
     expect(r.unallocated_points).toBe(5);
     expect(r.levels_gained).toBe(1);
   });
@@ -121,5 +122,31 @@ describe('applyXpGain', () => {
   it('treats zero XP as no-op', () => {
     const r = applyXpGain(baseProfile, 0);
     expect(r).toMatchObject({ level: 1, xp_in_level: 0, levels_gained: 0 });
+  });
+});
+
+describe('decideWeeklyLevelUp', () => {
+  it('85% completion levels up', () => {
+    const r = decideWeeklyLevelUp({ level: 5, completionPct: 0.85 });
+    expect(r.leveledUp).toBe(true);
+    expect(r.newLevel).toBe(6);
+  });
+
+  it('84% completion does NOT level up', () => {
+    const r = decideWeeklyLevelUp({ level: 5, completionPct: 0.84 });
+    expect(r.leveledUp).toBe(false);
+    expect(r.newLevel).toBe(5);
+  });
+
+  it('100% completion levels up', () => {
+    const r = decideWeeklyLevelUp({ level: 3, completionPct: 1.0 });
+    expect(r.leveledUp).toBe(true);
+    expect(r.newLevel).toBe(4);
+  });
+
+  it('0% completion does NOT level up', () => {
+    const r = decideWeeklyLevelUp({ level: 7, completionPct: 0.0 });
+    expect(r.leveledUp).toBe(false);
+    expect(r.newLevel).toBe(7);
   });
 });
