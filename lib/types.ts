@@ -31,6 +31,8 @@ export interface Profile {
   email_enabled: boolean;
   email_send_hour_local: number;
   timezone: string;
+  username: string | null;
+  leaderboard_opt_in: boolean;
 }
 
 export interface QuestTemplate {
