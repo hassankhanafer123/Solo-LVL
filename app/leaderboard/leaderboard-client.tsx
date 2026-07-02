@@ -4,10 +4,13 @@ import { useState, useTransition } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
 import { Trophy, ArrowLeft, Crown } from "lucide-react";
-import { api } from "@/lib/api/client";
+import { useTrackerApi, useIsDemo } from "@/lib/demo/context";
 import type { LeaderboardView } from "@/lib/api/types";
 
 export function LeaderboardClient({ view: initialView }: { view: LeaderboardView }) {
+  const api = useTrackerApi();
+  const isDemo = useIsDemo();
+  const backHref = isDemo ? "/demo" : "/";
   const [view, setView] = useState<LeaderboardView>(initialView);
   const [isPending, startTransition] = useTransition();
 
@@ -51,7 +54,7 @@ export function LeaderboardClient({ view: initialView }: { view: LeaderboardView
         {/* Header */}
         <div className="flex items-center justify-between mb-8">
           <Link
-            href="/"
+            href={backHref}
             className="flex items-center gap-1.5 font-mono text-[10px] tracking-[0.3em] uppercase text-slate-400 hover:text-slate-200 transition-colors"
           >
             <ArrowLeft className="h-3 w-3" strokeWidth={2.5} />
