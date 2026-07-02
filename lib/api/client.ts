@@ -11,6 +11,8 @@ import { createClient } from '@/lib/supabase/client';
 import type { TrackerApi } from '@/lib/api/contract';
 import type {
   LeaderboardView,
+  PartyActionResult,
+  PartyView,
   PlanRowInput,
   SetUsernameResult,
   TrackerSnapshot,
@@ -78,4 +80,32 @@ export const api: TrackerApi = {
       method: 'POST',
       body: JSON.stringify({ rows }),
     }),
+
+  getParty: () => request<PartyView>('/api/party'),
+
+  createParty: (name: string) =>
+    request<PartyActionResult>('/api/party', {
+      method: 'POST',
+      body: JSON.stringify({ name }),
+    }),
+
+  joinParty: (code: string) =>
+    request<PartyActionResult>('/api/party/join', {
+      method: 'POST',
+      body: JSON.stringify({ code }),
+    }),
+
+  leaveParty: () => request<PartyView>('/api/party/leave', { method: 'POST' }),
+
+  challengeDuel: (opponentId: string) =>
+    request<PartyActionResult>('/api/duels', {
+      method: 'POST',
+      body: JSON.stringify({ opponentId }),
+    }),
+
+  acceptDuel: (duelId: string) =>
+    request<PartyView>(`/api/duels/${duelId}/accept`, { method: 'POST' }),
+
+  declineDuel: (duelId: string) =>
+    request<PartyView>(`/api/duels/${duelId}/decline`, { method: 'POST' }),
 };

@@ -29,6 +29,14 @@ export interface TrackerProfile {
   stats: { INT: number; STR: number; DIS: number };
 }
 
+export interface ActiveDuelSummary {
+  id: string;
+  opponentUsername: string | null;
+  myScore: number;
+  opponentScore: number;
+  endsAt: string | null;
+}
+
 export interface TrackerSnapshot {
   profile: TrackerProfile;
   dailyQuests: TrackerQuest[];
@@ -38,4 +46,5 @@ export interface TrackerSnapshot {
   weeklyCompletionPct: number;  // 0..1, current week
   weeklyCompleted: number;
   weeklyTotal: number;
+  activeDuel?: ActiveDuelSummary | null;
 }

@@ -20,3 +20,59 @@ export interface LeaderboardView {
 }
 
 export type SetUsernameResult = { ok: true } | { ok: false; error: string };
+
+export interface PartyInfo {
+  id: string;
+  name: string;
+  code: string;
+  combinedXp: number;
+}
+
+export interface PartyMemberEntry {
+  userId: string;
+  username: string | null;
+  level: number;
+  totalXp: number;
+  weeklyXp: number;
+  duelWins: number;
+  isLeader: boolean;
+}
+
+export interface FeedEventView {
+  id: string;
+  kind:
+    | 'quest_complete'
+    | 'level_up'
+    | 'weekly_goal_hit'
+    | 'member_joined'
+    | 'duel_started'
+    | 'duel_won';
+  username: string | null;
+  payload: Record<string, unknown>;
+  createdAt: string;
+}
+
+export interface DuelEntry {
+  id: string;
+  status: 'pending' | 'active' | 'declined' | 'finished';
+  challengerId: string;
+  opponentId: string;
+  challengerUsername: string | null;
+  opponentUsername: string | null;
+  challengerScore: number;
+  opponentScore: number;
+  endsAt: string | null;
+  winnerId: string | null;
+}
+
+export interface PartyView {
+  party: PartyInfo | null;
+  members: PartyMemberEntry[];
+  feed: FeedEventView[];
+  duels: DuelEntry[];
+  myUserId: string;
+}
+
+export type PartyActionResult =
+  | { ok: true; error: null; view: PartyView }
+  | { ok: false; error: string; view: null };

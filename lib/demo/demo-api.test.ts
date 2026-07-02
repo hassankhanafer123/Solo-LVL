@@ -46,4 +46,14 @@ describe('demo-api', () => {
     const snap = await api.getSnapshot();
     expect(snap.dailyQuests.length).toBeGreaterThan(0);
   });
+
+  it('challengeDuel adds a pending duel against a party mate', async () => {
+    const api = createDemoApi();
+    const before = await api.getParty();
+    const mate = before.members.find((m) => m.userId !== before.myUserId)!;
+    const res = await api.challengeDuel(mate.userId);
+    expect(res.ok).toBe(true);
+    expect(res.view!.duels[0]!.status).toBe('pending');
+    expect(res.view!.duels[0]!.opponentId).toBe(mate.userId);
+  });
 });

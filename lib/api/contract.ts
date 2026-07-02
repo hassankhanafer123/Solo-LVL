@@ -1,6 +1,8 @@
 // lib/api/contract.ts
 import type {
   LeaderboardView,
+  PartyActionResult,
+  PartyView,
   PlanRowInput,
   SetUsernameResult,
   TrackerSnapshot,
@@ -19,4 +21,11 @@ export interface TrackerApi {
   joinLeaderboard(): Promise<LeaderboardView>;
   leaveLeaderboard(): Promise<LeaderboardView>;
   planWeek(rows: PlanRowInput[]): Promise<TrackerSnapshot>;
+  getParty(): Promise<PartyView>;
+  createParty(name: string): Promise<PartyActionResult>;
+  joinParty(code: string): Promise<PartyActionResult>;
+  leaveParty(): Promise<PartyView>;
+  challengeDuel(opponentId: string): Promise<PartyActionResult>;
+  acceptDuel(duelId: string): Promise<PartyView>;
+  declineDuel(duelId: string): Promise<PartyView>;
 }

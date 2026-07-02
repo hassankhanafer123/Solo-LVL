@@ -8,7 +8,7 @@
 // RLS applies. All game logic lives in Python — Next is just a thin proxy here.
 
 import { createClient } from '@/lib/supabase/server';
-import type { LeaderboardView, TrackerSnapshot } from '@/lib/api/types';
+import type { LeaderboardView, PartyView, TrackerSnapshot } from '@/lib/api/types';
 
 // Server→server, so a private API_URL can override the public one if needed.
 const BASE =
@@ -41,4 +41,9 @@ export function getSnapshotServer(): Promise<TrackerSnapshot | null> {
 /** Initial leaderboard view. Returns null when there is no session. */
 export function getLeaderboardServer(): Promise<LeaderboardView | null> {
   return getJson<LeaderboardView>('/api/leaderboard');
+}
+
+/** Initial party view. Returns null when there is no session. */
+export function getPartyServer(): Promise<PartyView | null> {
+  return getJson<PartyView>('/api/party');
 }

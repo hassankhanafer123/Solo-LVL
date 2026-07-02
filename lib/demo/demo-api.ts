@@ -1,5 +1,7 @@
 import type { TrackerApi } from '@/lib/api/contract';
-import type { LeaderboardView, PlanRowInput, SetUsernameResult, TrackerSnapshot } from '@/lib/api/types';
+import type {
+  LeaderboardView, PartyActionResult, PartyView, PlanRowInput, SetUsernameResult, TrackerSnapshot,
+} from '@/lib/api/types';
 import type { TrackerQuest } from '@/lib/tracker/types';
 import { computeLockedXp } from '@/lib/tracker/locked-xp';
 import {
@@ -7,6 +9,7 @@ import {
 } from './seed';
 import { deriveProfile } from './derive';
 import { DEMO_LEADERBOARD } from './leaderboard-seed';
+import { buildDemoParty } from './party-seed';
 
 export const DEMO_STORAGE_KEY = 'slvl.demo';
 
@@ -68,6 +71,7 @@ export interface DemoApi extends TrackerApi {
 
 export function createDemoApi(): DemoApi {
   let snap = load();
+  let demoParty: PartyView = buildDemoParty();
 
   const commit = (next: TrackerSnapshot): TrackerSnapshot => {
     snap = recompute(next);
@@ -129,6 +133,38 @@ export function createDemoApi(): DemoApi {
       snap = buildDemoSnapshot();
       save(snap);
       return snap;
+    },
+
+    getParty: async () => demoParty,
+
+    createParty: async (name: string): Promise<PartyActionResult> => {
+      demoParty = { ...buildDemoParty(), party: { ...buildDemoParty().party!, name } };
+      return { ok: true as const, error: null, view: demoParty };
+    },
+
+    joinParty: async (): Promise<PartyActionResult> => ({ ok: true as const, error: null, view: demoParty }),
+
+    leaveParty: async () => {
+      demoParty = { party: null, members: [], feed: [], duels: [], myUserId: 'demo-me' };
+      return demoParty;
+    },
+
+    challengeDuel: async (opponentId: string): Promise<PartyActionResult> => {
+      const opp = demoParty.members.find((m) => m.userId === opponentId);
+      const duel = {
+        id: `d-${Date.now()}`, status: 'pending' as const,
+        challengerId: 'demo-me', opponentId,
+        challengerUsername: 'you_the_hunter', opponentUsername: opp?.username ?? null,
+        challengerScore: 0, opponentScore: 0, endsAt: null, winnerId: null,
+      };
+      demoParty = { ...demoParty, duels: [duel, ...demoParty.duels] };
+      return { ok: true as const, error: null, view: demoParty };
+    },
+
+    acceptDuel: async () => demoParty,
+    declineDuel: async (duelId: string) => {
+      demoParty = { ...demoParty, duels: demoParty.duels.filter((d) => d.id !== duelId) };
+      return demoParty;
     },
   };
 }
