@@ -16,13 +16,17 @@ export default function WelcomePage() {
     e.preventDefault();
     setError(null);
     setPending(true);
-    const result = await api.setUsername(value);
-    if (result.ok) {
-      router.push("/");
-    } else {
+    try {
+      const result = await api.setUsername(value);
+      if (result.ok) {
+        router.push("/");
+        return;
+      }
       setError(result.error);
-      setPending(false);
+    } catch {
+      setError("Couldn't reach the server — give it a few seconds and try again.");
     }
+    setPending(false);
   }
 
   return (
