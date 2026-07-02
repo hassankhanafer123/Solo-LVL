@@ -71,6 +71,7 @@ export interface PartyView {
   feed: FeedEventView[];
   duels: DuelEntry[];
   myUserId: string;
+  myUsername: string | null;
 }
 
 export type PartyActionResult =

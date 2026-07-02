@@ -33,5 +33,6 @@ export function buildDemoParty(): PartyView {
     party: { id: 'demo-party', name: 'Shadow Monarchs', code: 'DEMO42', combinedXp: 15810 },
     members: [...MEMBERS], feed: [...FEED], duels: [...DUELS],
     myUserId: DEMO_MY_USER_ID,
+    myUsername: 'you_the_hunter',
   };
 }

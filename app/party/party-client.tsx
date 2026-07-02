@@ -185,7 +185,7 @@ export function PartyClient({ view: initialView }: { view: PartyView }) {
                 <div className="flex items-center gap-2 text-sm text-amber-100">
                   <Swords className="h-4 w-4 text-amber-300" strokeWidth={2.5} />
                   <span>
-                    <strong>{d.challengerUsername}</strong> challenged you to a duel
+                    <strong>{d.challengerUsername ?? "hunter"}</strong> challenged you to a duel
                     (this week&apos;s XP).
                   </span>
                 </div>

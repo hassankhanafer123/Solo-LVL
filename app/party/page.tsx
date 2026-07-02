@@ -7,5 +7,8 @@ export default async function PartyPage() {
   if (!view) {
     redirect('/login');
   }
+  if (view.myUsername === null) {
+    redirect('/welcome');
+  }
   return <PartyClient view={view} />;
 }

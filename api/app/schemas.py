@@ -98,6 +98,7 @@ class PartyView(BaseModel):
     feed: list[FeedEventView]
     duels: list[DuelEntry]
     myUserId: str
+    myUsername: Optional[str] = None
 
 
 class PartyActionResult(BaseModel):

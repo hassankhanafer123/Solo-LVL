@@ -145,7 +145,7 @@ export function createDemoApi(): DemoApi {
     joinParty: async (): Promise<PartyActionResult> => ({ ok: true as const, error: null, view: demoParty }),
 
     leaveParty: async () => {
-      demoParty = { party: null, members: [], feed: [], duels: [], myUserId: 'demo-me' };
+      demoParty = { party: null, members: [], feed: [], duels: [], myUserId: 'demo-me', myUsername: 'you_the_hunter' };
       return demoParty;
     },
 

@@ -242,10 +242,16 @@ class SocialService:
         }
 
     def get_party_view(self) -> dict:
+        # Own username rides along so the page can gate on the /welcome step
+        # even before the user has a party.
+        me = (
+            self.adm.table("profile").select("username")
+            .eq("user_id", self.uid).single().execute().data
+        )
         pid = self.my_party_id()
         if not pid:
             return {"party": None, "members": [], "feed": [], "duels": [],
-                    "myUserId": self.uid}
+                    "myUserId": self.uid, "myUsername": me.get("username")}
         self.resolve_expired_duels()
 
         party = self.adm.table("party").select("*").eq("id", pid).single().execute().data
@@ -313,4 +319,5 @@ class SocialService:
             "party": {"id": party["id"], "name": party["name"],
                       "code": party["code"], "combinedXp": combined},
             "members": members, "feed": feed, "duels": duels, "myUserId": self.uid,
+            "myUsername": me.get("username"),
         }
