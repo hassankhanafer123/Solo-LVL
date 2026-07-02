@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { motion } from "motion/react";
 import { Sparkles, Mail, Check } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
@@ -109,6 +110,17 @@ export default function LoginPage() {
               )}
             </motion.button>
           </form>
+        )}
+
+        {status !== "sent" && (
+          <div className="mt-6 text-center">
+            <Link
+              href="/demo"
+              className="font-mono text-[10px] tracking-[0.3em] uppercase text-slate-400 underline-offset-4 hover:text-slate-200 hover:underline"
+            >
+              Try the demo — no sign-up
+            </Link>
+          </div>
         )}
 
         {status === "sent" && (

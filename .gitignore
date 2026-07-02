@@ -33,6 +33,7 @@ yarn-error.log*
 # env files (can opt-in for committing if needed)
 .env*
 !.env.local.example
+!.env.example
 
 # vercel
 .vercel
@@ -41,3 +42,8 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 .gstack/
+
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/

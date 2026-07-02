@@ -1,9 +1,12 @@
 import { redirect } from 'next/navigation';
-import { getLeaderboard } from '@/app/actions/tracker';
+import { getLeaderboardServer } from '@/lib/api/server';
 import { LeaderboardClient } from './leaderboard-client';
 
 export default async function LeaderboardPage() {
-  const view = await getLeaderboard();
+  const view = await getLeaderboardServer();
+  if (!view) {
+    redirect('/login');
+  }
   if (view.myUsername === null) {
     redirect('/welcome');
   }

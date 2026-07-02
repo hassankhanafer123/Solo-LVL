@@ -38,6 +38,8 @@ export async function updateSession(request: NextRequest) {
   const path = request.nextUrl.pathname;
   const isPublic =
     path.startsWith("/login") ||
+    path.startsWith("/demo") ||
+    path.startsWith("/terms") ||
     path.startsWith("/auth") ||
     path.startsWith("/_next") ||
     path === "/favicon.ico";

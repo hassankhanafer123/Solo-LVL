@@ -4,8 +4,8 @@ import { useState, useTransition } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
 import { Trophy, ArrowLeft, Crown } from "lucide-react";
-import { joinLeaderboard, leaveLeaderboard } from "@/app/actions/tracker";
-import type { LeaderboardView } from "@/app/actions/tracker";
+import { api } from "@/lib/api/client";
+import type { LeaderboardView } from "@/lib/api/types";
 
 export function LeaderboardClient({ view: initialView }: { view: LeaderboardView }) {
   const [view, setView] = useState<LeaderboardView>(initialView);
@@ -14,7 +14,7 @@ export function LeaderboardClient({ view: initialView }: { view: LeaderboardView
   function handleJoin() {
     startTransition(async () => {
       try {
-        const updated = await joinLeaderboard();
+        const updated = await api.joinLeaderboard();
         setView(updated);
       } catch {
         toast.error("Could not join leaderboard. Try again.");
@@ -25,7 +25,7 @@ export function LeaderboardClient({ view: initialView }: { view: LeaderboardView
   function handleLeave() {
     startTransition(async () => {
       try {
-        const updated = await leaveLeaderboard();
+        const updated = await api.leaveLeaderboard();
         setView(updated);
       } catch {
         toast.error("Could not leave leaderboard. Try again.");

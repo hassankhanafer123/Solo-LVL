@@ -22,6 +22,7 @@ import { cn } from "@/lib/utils";
 import type { StatKind } from "@/lib/types";
 import type { TrackerSnapshot, TrackerQuest, TrackerProfile } from "@/lib/tracker/types";
 import { useTracker } from "@/hooks/use-tracker";
+import { useIsDemo } from '@/lib/demo/context';
 import { PlanEditor } from "@/components/tracker/plan-editor";
 import { StudioCursor } from "@/components/cursor";
 import { ActivityRings, CountUp } from "@/components/animations/activity-rings";
@@ -123,6 +124,7 @@ const STAT_HEX: Record<Stat, [string, string, string]> = {
 export function DesktopExperience({ snapshot }: { snapshot: TrackerSnapshot }) {
   const reduce = useReducedMotion();
   const tracker = useTracker(snapshot);
+  const lbHref = useIsDemo() ? '/demo/leaderboard' : '/leaderboard';
 
   const quests = useMemo(
     () => [...tracker.snapshot.dailyQuests, ...tracker.snapshot.weeklyQuests].map(toViewQuest),
@@ -323,7 +325,7 @@ export function DesktopExperience({ snapshot }: { snapshot: TrackerSnapshot }) {
             Lv {player.level}
           </span>
           <Link
-            href="/leaderboard"
+            href={lbHref}
             data-cursor="hover"
             className="flex items-center gap-1.5 rounded-full border border-white/10 bg-slate-950/60 px-3 py-1.5 font-mono text-[10px] tracking-[0.2em] uppercase text-slate-300 hover:bg-white/10 transition-colors backdrop-blur-xl"
           >
