@@ -61,7 +61,7 @@ create table duel (
     check (status in ('pending', 'active', 'declined', 'finished')),
   week_start date,                      -- set on accept (challenger's week)
   ends_at timestamptz,                  -- set on accept
-  winner_id uuid references auth.users, -- null until finished; null = draw/void
+  winner_id uuid references auth.users on delete set null, -- null until finished; null = draw/void
   penalty_applied boolean not null default false,
   created_at timestamptz not null default now(),
   accepted_at timestamptz,
@@ -178,7 +178,7 @@ begin
   if exists (select 1 from party_member where user_id = v_uid) then
     raise exception 'already in a party';
   end if;
-  select * into v_party from party where code = upper(trim(p_code));
+  select * into v_party from party where code = upper(trim(p_code)) for update;
   if not found then
     raise exception 'invalid code';
   end if;
@@ -243,6 +243,7 @@ grant execute on function public.leave_party() to authenticated;
 -- select public.create_party('Shadow Monarchs');       -- as a user: returns code
 -- select public.join_party('XXXXXX');                  -- second user
 -- insert into activity_event ... as authenticated      -- expect permission denied
+-- as a SECOND user in a DIFFERENT party: select * from party_member; -- expect only your own party's rows (RLS scope check)
 ```
 
 - [ ] **Step 2: Commit**
