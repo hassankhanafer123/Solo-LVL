@@ -1,0 +1,10 @@
+[project]
+name = "solo-leveling-api"
+version = "0.1.0"
+description = "Python (FastAPI) backend for Solo Leveling Life / DayMaxing"
+requires-python = ">=3.11"
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
+addopts = "-q"

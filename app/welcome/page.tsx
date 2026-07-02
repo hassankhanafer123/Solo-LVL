@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "motion/react";
 import { Sparkles, User } from "lucide-react";
-import { setUsername } from "@/app/actions/tracker";
+import { api } from "@/lib/api/client";
 
 export default function WelcomePage() {
   const router = useRouter();
@@ -16,13 +16,17 @@ export default function WelcomePage() {
     e.preventDefault();
     setError(null);
     setPending(true);
-    const result = await setUsername(value);
-    if (result.ok) {
-      router.push("/");
-    } else {
+    try {
+      const result = await api.setUsername(value);
+      if (result.ok) {
+        router.push("/");
+        return;
+      }
       setError(result.error);
-      setPending(false);
+    } catch {
+      setError("Couldn't reach the server — give it a few seconds and try again.");
     }
+    setPending(false);
   }
 
   return (

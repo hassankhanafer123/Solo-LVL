@@ -1,11 +1,23 @@
 "use client";
 
-import { useState } from "react";
+import { Suspense, useState } from "react";
+import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { motion } from "motion/react";
 import { Sparkles, Mail, Check } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 
 export default function LoginPage() {
+  return (
+    <Suspense fallback={null}>
+      <LoginForm />
+    </Suspense>
+  );
+}
+
+function LoginForm() {
+  const searchParams = useSearchParams();
+  const callbackFailed = searchParams.get("error") === "auth_callback_failed";
   const [email, setEmail] = useState("");
   const [status, setStatus] = useState<"idle" | "sending" | "sent" | "error">("idle");
   const [error, setError] = useState<string | null>(null);
@@ -63,6 +75,16 @@ export default function LoginPage() {
           </p>
         </div>
 
+        {callbackFailed && status === "idle" && (
+          <div
+            role="alert"
+            className="mb-6 rounded-2xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-200"
+          >
+            That sign-in link didn&apos;t work — links expire and only open in the
+            browser that requested them. Enter your email for a fresh one.
+          </div>
+        )}
+
         {status !== "sent" && (
           <form
             onSubmit={handleSubmit}
@@ -109,6 +131,17 @@ export default function LoginPage() {
               )}
             </motion.button>
           </form>
+        )}
+
+        {status !== "sent" && (
+          <div className="mt-6 text-center">
+            <Link
+              href="/demo"
+              className="font-mono text-[10px] tracking-[0.3em] uppercase text-slate-400 underline-offset-4 hover:text-slate-200 hover:underline"
+            >
+              Try the demo — no sign-up
+            </Link>
+          </div>
         )}
 
         {status === "sent" && (

@@ -4,12 +4,10 @@ import { useState, useTransition, useCallback } from 'react';
 import { toast } from 'sonner';
 import type { TrackerSnapshot } from '@/lib/tracker/types';
 import type { PlanRowInput } from '@/lib/tracker/plan-reconcile';
-import {
-  setQuestProgress, completeQuest, uncompleteQuest, setWeeklyProgress,
-  planWeek as planWeekAction,
-} from '@/app/actions/tracker';
+import { useTrackerApi } from '@/lib/demo/context';
 
 export function useTracker(initial: TrackerSnapshot) {
+  const api = useTrackerApi();
   const [snapshot, setSnapshot] = useState(initial);
   const [, startTransition] = useTransition();
 
@@ -38,8 +36,8 @@ export function useTracker(initial: TrackerSnapshot) {
           ? { ...q, actualValue: a, completed: q.targetValue != null ? a >= q.targetValue : q.completed }
           : q),
     };
-    run(optimistic, () => setQuestProgress(instanceId, a));
-  }, [snapshot, run]);
+    run(optimistic, () => api.setQuestProgress(instanceId, a));
+  }, [snapshot, run, api]);
 
   const complete = useCallback((instanceId: string) => {
     const optimistic = {
@@ -47,8 +45,8 @@ export function useTracker(initial: TrackerSnapshot) {
       dailyQuests: snapshot.dailyQuests.map((q) =>
         q.instanceId === instanceId ? { ...q, completed: true } : q),
     };
-    run(optimistic, () => completeQuest(instanceId));
-  }, [snapshot, run]);
+    run(optimistic, () => api.completeQuest(instanceId));
+  }, [snapshot, run, api]);
 
   const uncomplete = useCallback((instanceId: string) => {
     const optimistic = {
@@ -56,8 +54,8 @@ export function useTracker(initial: TrackerSnapshot) {
       dailyQuests: snapshot.dailyQuests.map((q) =>
         q.instanceId === instanceId ? { ...q, completed: false } : q),
     };
-    run(optimistic, () => uncompleteQuest(instanceId));
-  }, [snapshot, run]);
+    run(optimistic, () => api.uncompleteQuest(instanceId));
+  }, [snapshot, run, api]);
 
   const setWeekly = useCallback((weeklyInstanceId: string, actual: number) => {
     const optimistic = {
@@ -65,15 +63,15 @@ export function useTracker(initial: TrackerSnapshot) {
       weeklyQuests: snapshot.weeklyQuests.map((q) =>
         q.instanceId === weeklyInstanceId ? { ...q, actualValue: Math.max(0, actual) } : q),
     };
-    run(optimistic, () => setWeeklyProgress(weeklyInstanceId, actual));
-  }, [snapshot, run]);
+    run(optimistic, () => api.setWeeklyProgress(weeklyInstanceId, actual));
+  }, [snapshot, run, api]);
 
   const planWeek = useCallback((rows: PlanRowInput[]) => {
     startTransition(async () => {
-      try { setSnapshot(await planWeekAction(rows)); }
+      try { setSnapshot(await api.planWeek(rows)); }
       catch { toast.error("Couldn't save your plan — try again."); }
     });
-  }, []);
+  }, [api]);
 
   return { snapshot, setProgress, complete, uncomplete, setWeekly, planWeek };
 }

@@ -4,17 +4,20 @@ import { useState, useTransition } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
 import { Trophy, ArrowLeft, Crown } from "lucide-react";
-import { joinLeaderboard, leaveLeaderboard } from "@/app/actions/tracker";
-import type { LeaderboardView } from "@/app/actions/tracker";
+import { useTrackerApi, useIsDemo } from "@/lib/demo/context";
+import type { LeaderboardView } from "@/lib/api/types";
 
 export function LeaderboardClient({ view: initialView }: { view: LeaderboardView }) {
+  const api = useTrackerApi();
+  const isDemo = useIsDemo();
+  const backHref = isDemo ? "/demo" : "/";
   const [view, setView] = useState<LeaderboardView>(initialView);
   const [isPending, startTransition] = useTransition();
 
   function handleJoin() {
     startTransition(async () => {
       try {
-        const updated = await joinLeaderboard();
+        const updated = await api.joinLeaderboard();
         setView(updated);
       } catch {
         toast.error("Could not join leaderboard. Try again.");
@@ -25,7 +28,7 @@ export function LeaderboardClient({ view: initialView }: { view: LeaderboardView
   function handleLeave() {
     startTransition(async () => {
       try {
-        const updated = await leaveLeaderboard();
+        const updated = await api.leaveLeaderboard();
         setView(updated);
       } catch {
         toast.error("Could not leave leaderboard. Try again.");
@@ -51,7 +54,7 @@ export function LeaderboardClient({ view: initialView }: { view: LeaderboardView
         {/* Header */}
         <div className="flex items-center justify-between mb-8">
           <Link
-            href="/"
+            href={backHref}
             className="flex items-center gap-1.5 font-mono text-[10px] tracking-[0.3em] uppercase text-slate-400 hover:text-slate-200 transition-colors"
           >
             <ArrowLeft className="h-3 w-3" strokeWidth={2.5} />

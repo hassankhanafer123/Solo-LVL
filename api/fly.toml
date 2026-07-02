@@ -1,0 +1,33 @@
+# Fly.io config for the Solo Leveling Life Python API.
+# Edit `app` to your chosen name, then: fly launch --no-deploy (first time)
+# or fly deploy. Secrets are set separately (see api/README.md), never here.
+
+app = "solo-leveling-api"
+primary_region = "iad"  # change to your nearest region (fly platform regions)
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  WEB_CONCURRENCY = "2"
+  # Set CORS_ORIGINS to your real frontend origin(s), comma-separated, e.g.
+  # "https://solo-leveling-life.vercel.app". Override with: fly secrets set CORS_ORIGINS=...
+  CORS_ORIGINS = "https://CHANGEME.vercel.app"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 0  # scale-to-zero (cheapest). Bump to 1 to avoid cold starts.
+
+  [[http_service.checks]]
+    method = "GET"
+    path = "/health"
+    interval = "30s"
+    timeout = "5s"
+    grace_period = "10s"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"

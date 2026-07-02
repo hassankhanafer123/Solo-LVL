@@ -9,17 +9,21 @@ import {
   Minus,
   Plus,
   Trophy,
+  Shield,
   CalendarDays,
   ListChecks,
   CalendarRange,
   BarChart3,
   Flame,
+  LogOut,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { StatKind } from "@/lib/types";
 import type { TrackerSnapshot, TrackerQuest } from "@/lib/tracker/types";
 import { useTracker } from "@/hooks/use-tracker";
+import { useIsDemo } from '@/lib/demo/context';
 import { PlanEditor } from "@/components/tracker/plan-editor";
+import { DuelBanner } from "@/components/tracker/duel-banner";
 
 type Stat = StatKind;
 type Tab = "today" | "week" | "stats";
@@ -49,6 +53,9 @@ function fmtMmSs(sec: number) {
 
 export function MobileApp({ snapshot }: { snapshot: TrackerSnapshot }) {
   const tracker = useTracker(snapshot);
+  const isDemo = useIsDemo();
+  const lbHref = isDemo ? '/demo/leaderboard' : '/leaderboard';
+  const partyHref = isDemo ? "/demo/party" : "/party";
   const profile = tracker.snapshot.profile;
   const weekStart = tracker.snapshot.weekStart;
   const username = profile.username ?? profile.displayName;
@@ -80,11 +87,18 @@ export function MobileApp({ snapshot }: { snapshot: TrackerSnapshot }) {
           </div>
           <div className="flex shrink-0 items-center gap-2">
             <Link
-              href="/leaderboard"
+              href={lbHref}
               aria-label="Leaderboard"
               className="grid h-10 w-10 place-items-center rounded-xl border border-white/10 bg-white/5 text-slate-200 transition-colors hover:bg-white/10"
             >
               <Trophy className="h-5 w-5" strokeWidth={2.25} />
+            </Link>
+            <Link
+              href={partyHref}
+              aria-label="Party"
+              className="grid h-10 w-10 place-items-center rounded-xl border border-white/10 bg-white/5 text-slate-200 transition-colors hover:bg-white/10"
+            >
+              <Shield className="h-5 w-5" strokeWidth={2.25} />
             </Link>
             <button
               type="button"
@@ -93,6 +107,17 @@ export function MobileApp({ snapshot }: { snapshot: TrackerSnapshot }) {
             >
               Edit tasks
             </button>
+            {!isDemo && (
+              <form action="/auth/signout" method="post">
+                <button
+                  type="submit"
+                  aria-label="Sign out"
+                  className="grid h-10 w-10 place-items-center rounded-xl border border-white/10 bg-white/5 text-slate-400 transition-colors hover:bg-white/10 hover:text-slate-200"
+                >
+                  <LogOut className="h-5 w-5" strokeWidth={2.25} />
+                </button>
+              </form>
+            )}
           </div>
         </div>
 
@@ -109,6 +134,12 @@ export function MobileApp({ snapshot }: { snapshot: TrackerSnapshot }) {
           </div>
         </div>
       </header>
+
+      {tracker.snapshot.activeDuel && (
+        <div className="px-4 pt-2">
+          <DuelBanner duel={tracker.snapshot.activeDuel} partyHref={partyHref} />
+        </div>
+      )}
 
       {/* === Main scroll area === */}
       <main className="px-4 pb-28 pt-4">

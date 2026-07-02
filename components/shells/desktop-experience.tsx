@@ -15,6 +15,8 @@ import {
   AlertTriangle,
   Calendar,
   Trophy,
+  Shield,
+  LogOut,
 } from "lucide-react";
 import { daysOfWeek } from "@/lib/time";
 import confetti from "canvas-confetti";
@@ -22,7 +24,9 @@ import { cn } from "@/lib/utils";
 import type { StatKind } from "@/lib/types";
 import type { TrackerSnapshot, TrackerQuest, TrackerProfile } from "@/lib/tracker/types";
 import { useTracker } from "@/hooks/use-tracker";
+import { useIsDemo } from '@/lib/demo/context';
 import { PlanEditor } from "@/components/tracker/plan-editor";
+import { DuelBanner } from "@/components/tracker/duel-banner";
 import { StudioCursor } from "@/components/cursor";
 import { ActivityRings, CountUp } from "@/components/animations/activity-rings";
 import dynamic from "next/dynamic";
@@ -123,6 +127,9 @@ const STAT_HEX: Record<Stat, [string, string, string]> = {
 export function DesktopExperience({ snapshot }: { snapshot: TrackerSnapshot }) {
   const reduce = useReducedMotion();
   const tracker = useTracker(snapshot);
+  const isDemo = useIsDemo();
+  const lbHref = isDemo ? '/demo/leaderboard' : '/leaderboard';
+  const partyHref = isDemo ? "/demo/party" : "/party";
 
   const quests = useMemo(
     () => [...tracker.snapshot.dailyQuests, ...tracker.snapshot.weeklyQuests].map(toViewQuest),
@@ -323,12 +330,20 @@ export function DesktopExperience({ snapshot }: { snapshot: TrackerSnapshot }) {
             Lv {player.level}
           </span>
           <Link
-            href="/leaderboard"
+            href={lbHref}
             data-cursor="hover"
             className="flex items-center gap-1.5 rounded-full border border-white/10 bg-slate-950/60 px-3 py-1.5 font-mono text-[10px] tracking-[0.2em] uppercase text-slate-300 hover:bg-white/10 transition-colors backdrop-blur-xl"
           >
             <Trophy className="h-3 w-3" strokeWidth={2.5} />
             <span className="hidden sm:inline">Leaderboard</span>
+          </Link>
+          <Link
+            href={partyHref}
+            data-cursor="hover"
+            className="flex items-center gap-1.5 rounded-full border border-white/10 bg-slate-950/60 px-3 py-1.5 font-mono text-[10px] tracking-[0.2em] uppercase text-slate-300 hover:bg-white/10 transition-colors backdrop-blur-xl"
+          >
+            <Shield className="h-3 w-3" strokeWidth={2.5} />
+            <span className="hidden sm:inline">Party</span>
           </Link>
           <button
             onClick={() => setPlanOpen(true)}
@@ -338,8 +353,26 @@ export function DesktopExperience({ snapshot }: { snapshot: TrackerSnapshot }) {
             <Calendar className="h-3 w-3" strokeWidth={2.5} />
             Plan Week
           </button>
+          {!isDemo && (
+            <form action="/auth/signout" method="post">
+              <button
+                type="submit"
+                data-cursor="hover"
+                aria-label="Sign out"
+                className="flex items-center rounded-full border border-white/10 bg-slate-950/60 px-3 py-1.5 font-mono text-[10px] tracking-[0.2em] uppercase text-slate-400 hover:bg-white/10 hover:text-slate-200 transition-colors backdrop-blur-xl"
+              >
+                <LogOut className="h-3 w-3" strokeWidth={2.5} />
+              </button>
+            </form>
+          )}
         </div>
       </header>
+
+      {tracker.snapshot.activeDuel && (
+        <div className="fixed top-20 left-1/2 z-40 w-full max-w-md -translate-x-1/2 px-4">
+          <DuelBanner duel={tracker.snapshot.activeDuel} partyHref={partyHref} />
+        </div>
+      )}
 
       {/* Plan-this-week modal */}
       <PlanEditor

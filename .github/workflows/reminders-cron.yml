@@ -1,0 +1,18 @@
+name: Email reminders (hourly)
+
+on:
+  schedule:
+    - cron: "0 * * * *"   # top of every hour (UTC)
+  workflow_dispatch: {}
+
+jobs:
+  trigger:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Hit the reminders endpoint
+        run: |
+          curl -fsS -X POST "$API_URL/internal/cron/reminders" \
+            -H "Authorization: Bearer $CRON_SECRET"
+        env:
+          API_URL: ${{ secrets.API_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
