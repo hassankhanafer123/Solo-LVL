@@ -28,6 +28,7 @@ from slowapi.util import get_remote_address
 
 from .auth import AuthContext, require_user
 from .config import get_settings
+from .db import admin_client
 from .schemas import (
     LeaderboardView,
     PlanWeekBody,
@@ -88,7 +89,7 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
 
 
 def _svc(ctx: AuthContext) -> TrackerService:
-    return TrackerService(ctx.client, ctx.user_id)
+    return TrackerService(ctx.client, ctx.user_id, admin=admin_client())
 
 
 @app.get("/health")

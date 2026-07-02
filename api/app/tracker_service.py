@@ -54,9 +54,16 @@ def _rows_to_templates(rows: list[dict]) -> list[QuestTemplate]:
 
 
 class TrackerService:
-    def __init__(self, client: Client, user_id: str):
-        self.db = client
+    def __init__(self, client: Client, user_id: str, admin: Client | None = None):
+        self.db = client          # RLS-scoped: reads + unlocked-column writes
         self.uid = user_id
+        # Locked-column writes (XP, streaks, level, daily_log.status,
+        # level_up_event) — 0008 revoked these from the authenticated role.
+        # Lazy import so pure-logic tests never need service credentials.
+        if admin is None:
+            from .db import admin_client
+            admin = admin_client()
+        self.adm = admin
 
     # ---- small query helpers -------------------------------------------
     def _data(self, q) -> Any:
@@ -260,11 +267,11 @@ class TrackerService:
             new_level = decision.new_level
             new_xp_to_next = xp_to_next(new_level)
             new_title = title_for_level(new_level)
-            db.table("profile").update({
+            self.adm.table("profile").update({
                 "level": new_level, "xp_in_level": 0,
                 "xp_to_next": new_xp_to_next, "title": new_title,
             }).eq("user_id", uid).execute()
-            db.table("level_up_event").insert({
+            self.adm.table("level_up_event").insert({
                 "user_id": uid, "from_level": profile["level"], "to_level": new_level,
                 "points_granted": 0, "title_unlocked": new_title,
             }).execute()
@@ -285,7 +292,7 @@ class TrackerService:
             i["xp_awarded"] if i["completed"]
             else compute_partial_xp(actual=actual, target=i.get("target_value"), base_xp=i["base_xp"])
         )
-        db.table("quest_instance").update(
+        self.adm.table("quest_instance").update(
             {"actual_value": actual, "xp_awarded": xp_awarded}
         ).eq("id", instance_id).eq("user_id", uid).execute()
 
@@ -310,11 +317,11 @@ class TrackerService:
         xp = category_xp(i["primary_stat"])
         stat_col = STAT_COL[i["primary_stat"]]
 
-        db.table("quest_instance").update(
+        self.adm.table("quest_instance").update(
             {"completed": True, "completed_at": _now_iso(), "xp_awarded": xp}
         ).eq("id", instance_id).eq("user_id", uid).eq("completed", False).execute()
 
-        db.table("profile").update({
+        self.adm.table("profile").update({
             "total_xp": p["total_xp"] + xp,
             "xp_in_level": p["xp_in_level"] + xp,
             stat_col: p[stat_col] + xp,
@@ -354,10 +361,10 @@ class TrackerService:
             current=p["streak_current"], best=p["streak_best"],
             yesterday_cleared=(y_log or {}).get("status") == "cleared",
         )
-        db.table("daily_log").update(
+        self.adm.table("daily_log").update(
             {"status": "cleared", "cleared_at": _now_iso()}
-        ).eq("id", daily_log_id).execute()
-        db.table("profile").update(
+        ).eq("id", daily_log_id).eq("user_id", uid).execute()
+        self.adm.table("profile").update(
             {"streak_current": streak.current, "streak_best": streak.best}
         ).eq("user_id", uid).execute()
 
@@ -374,10 +381,10 @@ class TrackerService:
         if reached and not i["completed"]:
             p = db.table("profile").select("*").eq("user_id", uid).single().execute().data
             xp = category_xp(i["primary_stat"])
-            db.table("weekly_quest_instance").update({
+            self.adm.table("weekly_quest_instance").update({
                 "actual_value": actual, "completed": True, "completed_at": _now_iso(), "xp_awarded": xp,
             }).eq("id", weekly_instance_id).eq("user_id", uid).eq("completed", False).execute()
-            db.table("profile").update({
+            self.adm.table("profile").update({
                 "total_xp": p["total_xp"] + xp,
                 "xp_in_level": p["xp_in_level"] + xp,
                 "stat_dis": p["stat_dis"] + xp,
