@@ -65,6 +65,9 @@ class TrackerService:
             admin = admin_client()
         self.adm = admin
 
+        from .social_service import SocialService
+        self.social = SocialService(db=client, admin=self.adm, uid=user_id)
+
     # ---- small query helpers -------------------------------------------
     def _data(self, q) -> Any:
         return q.execute().data
@@ -77,6 +80,12 @@ class TrackerService:
         # zero rows match — guard so callers get None instead of crashing.
         res = q.execute()
         return res.data if res is not None else None
+
+    def _social_safely(self, fn, *args, **kwargs):
+        try:
+            return fn(*args, **kwargs)
+        except Exception:  # noqa: BLE001 — social layer must never break tracking
+            return None
 
     # ---- setUsername ---------------------------------------------------
     def set_username(self, raw: str) -> dict:
@@ -155,6 +164,12 @@ class TrackerService:
                 daily_to_insert, on_conflict="daily_log_id,template_id", ignore_duplicates=True
             ).execute()
 
+        # Duel losses owe a +50% penalty quest, applied on the next day build.
+        if self._social_safely(
+            self.social.apply_pending_penalty, daily_log["id"], daily_templates
+        ):
+            pass  # inserted — the read below picks it up
+
         db.table("weekly_log").upsert(
             {"user_id": uid, "week_start_date": week_start},
             on_conflict="user_id,week_start_date", ignore_duplicates=True,
@@ -222,6 +237,7 @@ class TrackerService:
             "weeklyCompletionPct": weekly_completion_pct,
             "weeklyCompleted": weekly_completed,
             "weeklyTotal": weekly_total,
+            "activeDuel": self._social_safely(self.social.active_duel_summary),
         }
 
     def _evaluate_prior_week_levelup(self, profile: dict, prior: dict, uid: str) -> None:
@@ -275,6 +291,10 @@ class TrackerService:
                 "user_id": uid, "from_level": profile["level"], "to_level": new_level,
                 "points_granted": 0, "title_unlocked": new_title,
             }).execute()
+            self._social_safely(
+                self.social.emit, "level_up",
+                {"toLevel": new_level, "title": new_title},
+            )
             profile["level"] = new_level
             profile["xp_in_level"] = 0
             profile["xp_to_next"] = new_xp_to_next
@@ -327,6 +347,11 @@ class TrackerService:
             stat_col: p[stat_col] + xp,
         }).eq("user_id", uid).execute()
 
+        self._social_safely(
+            self.social.emit, "quest_complete",
+            {"name": i["name"], "xp": xp, "instanceId": instance_id},
+        )
+
         self._maybe_advance_streak(uid, i["daily_log_id"], p)
         return self.get_today_snapshot()
 
@@ -335,6 +360,7 @@ class TrackerService:
         self.db.table("quest_instance").update(
             {"completed": False, "completed_at": None}
         ).eq("id", instance_id).eq("user_id", self.uid).execute()
+        self._social_safely(self.social.retract_quest_event, instance_id)
         return self.get_today_snapshot()
 
     def _maybe_advance_streak(self, uid: str, daily_log_id: str, p: dict) -> None:
@@ -389,6 +415,10 @@ class TrackerService:
                 "xp_in_level": p["xp_in_level"] + xp,
                 "stat_dis": p["stat_dis"] + xp,
             }).eq("user_id", uid).execute()
+            self._social_safely(
+                self.social.emit, "weekly_goal_hit",
+                {"name": i["name"], "xp": xp},
+            )
         else:
             db.table("weekly_quest_instance").update(
                 {"actual_value": actual}
