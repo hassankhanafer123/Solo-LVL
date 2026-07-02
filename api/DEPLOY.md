@@ -22,6 +22,10 @@ Dashboard → SQL Editor and run these **in order** if not already applied:
 - `supabase/migrations/0007_fix_new_user_week_tz.sql` — fixes the signup trigger so
   new users get quests regardless of timezone/day. **Without it, US Sunday-night
   signups get zero quests.**
+- `supabase/migrations/0008_hardening.sql` — locks stat columns + adds the
+  `'pending'` `email_status` enum value. **Must be applied before (or with) this
+  API build — the cron claim insert and locked-column writes fail otherwise.**
+- `supabase/migrations/0009_social.sql` (if present) — social tables.
 
 Quick check they took:
 ```sql

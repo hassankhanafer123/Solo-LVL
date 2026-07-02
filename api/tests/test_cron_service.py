@@ -29,15 +29,21 @@ def _admin(profiles, users, claim_wins=True):
     admin = MagicMock()
     admin.auth.admin.list_users.side_effect = [users, []]  # one page, then empty
 
+    # Shared email_log mock (same object every table() call) so tests can
+    # inspect the claim upsert and the post-send status update.
+    email_log = MagicMock()
+    # claim upsert: .data non-empty => this run won the claim
+    email_log.upsert.return_value.execute.return_value.data = (
+        [{"id": "log1"}] if claim_wins else []
+    )
+    admin.email_log = email_log  # exposed for assertions
+
     def table(name):
+        if name == "email_log":
+            return email_log
         t = MagicMock()
         if name == "profile":
             t.select.return_value.execute.return_value.data = profiles
-        elif name == "email_log":
-            # claim upsert: .data non-empty => this run won the claim
-            t.upsert.return_value.execute.return_value.data = (
-                [{"id": "log1"}] if claim_wins else []
-            )
         elif name == "week_plan":
             t.select.return_value.eq.return_value.eq.return_value.maybe_single.return_value.execute.return_value = None
         return t
@@ -80,6 +86,30 @@ def test_email_map_paginates(monkeypatch):
     out = cron._email_map(admin)
     assert len(out) == 1001
     assert admin.auth.admin.list_users.call_count == 2
+    admin.auth.admin.list_users.assert_any_call(page=1, per_page=1000)
+
+
+def test_failed_send_updates_log_status(monkeypatch):
+    # A failed send must still resolve the pending claim row to
+    # status='failed' — otherwise email_log lies about what happened.
+    def boom(**kw):
+        raise RuntimeError("smtp down")
+
+    monkeypatch.setattr(cron, "send_email", boom)
+    admin = _admin(profiles=[_profile("u1")], users=[_user("u1", "a@x.com")])
+    out = cron.run_reminders(now=NOW, admin=admin)
+
+    assert out["dailySent"] == 0
+    assert len(out["errors"]) == 1
+    assert "u1" in out["errors"][0] and "smtp down" in out["errors"][0]
+
+    log = admin.email_log
+    log.update.assert_called_once_with({"status": "failed", "error": "smtp down"})
+    chain = log.update.return_value
+    chain.eq.assert_called_once_with("user_id", "u1")
+    chain.eq.return_value.eq.assert_called_once_with("quest_date", "2026-06-10")
+    chain.eq.return_value.eq.return_value.eq.assert_called_once_with("kind", "daily")
+    chain.eq.return_value.eq.return_value.eq.return_value.execute.assert_called_once()
 
 
 def test_email_target_is_ignored(monkeypatch):
