@@ -1,12 +1,23 @@
 "use client";
 
-import { useState } from "react";
+import { Suspense, useState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { motion } from "motion/react";
 import { Sparkles, Mail, Check } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 
 export default function LoginPage() {
+  return (
+    <Suspense fallback={null}>
+      <LoginForm />
+    </Suspense>
+  );
+}
+
+function LoginForm() {
+  const searchParams = useSearchParams();
+  const callbackFailed = searchParams.get("error") === "auth_callback_failed";
   const [email, setEmail] = useState("");
   const [status, setStatus] = useState<"idle" | "sending" | "sent" | "error">("idle");
   const [error, setError] = useState<string | null>(null);
@@ -63,6 +74,16 @@ export default function LoginPage() {
               : "Enter your email — we'll send you a one-click sign-in link."}
           </p>
         </div>
+
+        {callbackFailed && status === "idle" && (
+          <div
+            role="alert"
+            className="mb-6 rounded-2xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-200"
+          >
+            That sign-in link didn&apos;t work — links expire and only open in the
+            browser that requested them. Enter your email for a fresh one.
+          </div>
+        )}
 
         {status !== "sent" && (
           <form
