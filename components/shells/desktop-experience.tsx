@@ -15,6 +15,7 @@ import {
   AlertTriangle,
   Calendar,
   Trophy,
+  Shield,
   LogOut,
 } from "lucide-react";
 import { daysOfWeek } from "@/lib/time";
@@ -25,6 +26,7 @@ import type { TrackerSnapshot, TrackerQuest, TrackerProfile } from "@/lib/tracke
 import { useTracker } from "@/hooks/use-tracker";
 import { useIsDemo } from '@/lib/demo/context';
 import { PlanEditor } from "@/components/tracker/plan-editor";
+import { DuelBanner } from "@/components/tracker/duel-banner";
 import { StudioCursor } from "@/components/cursor";
 import { ActivityRings, CountUp } from "@/components/animations/activity-rings";
 import dynamic from "next/dynamic";
@@ -127,6 +129,7 @@ export function DesktopExperience({ snapshot }: { snapshot: TrackerSnapshot }) {
   const tracker = useTracker(snapshot);
   const isDemo = useIsDemo();
   const lbHref = isDemo ? '/demo/leaderboard' : '/leaderboard';
+  const partyHref = isDemo ? "/demo/party" : "/party";
 
   const quests = useMemo(
     () => [...tracker.snapshot.dailyQuests, ...tracker.snapshot.weeklyQuests].map(toViewQuest),
@@ -334,6 +337,14 @@ export function DesktopExperience({ snapshot }: { snapshot: TrackerSnapshot }) {
             <Trophy className="h-3 w-3" strokeWidth={2.5} />
             <span className="hidden sm:inline">Leaderboard</span>
           </Link>
+          <Link
+            href={partyHref}
+            data-cursor="hover"
+            className="flex items-center gap-1.5 rounded-full border border-white/10 bg-slate-950/60 px-3 py-1.5 font-mono text-[10px] tracking-[0.2em] uppercase text-slate-300 hover:bg-white/10 transition-colors backdrop-blur-xl"
+          >
+            <Shield className="h-3 w-3" strokeWidth={2.5} />
+            <span className="hidden sm:inline">Party</span>
+          </Link>
           <button
             onClick={() => setPlanOpen(true)}
             data-cursor="hover"
@@ -356,6 +367,12 @@ export function DesktopExperience({ snapshot }: { snapshot: TrackerSnapshot }) {
           )}
         </div>
       </header>
+
+      {tracker.snapshot.activeDuel && (
+        <div className="fixed top-20 left-1/2 z-40 w-full max-w-md -translate-x-1/2 px-4">
+          <DuelBanner duel={tracker.snapshot.activeDuel} partyHref={partyHref} />
+        </div>
+      )}
 
       {/* Plan-this-week modal */}
       <PlanEditor
