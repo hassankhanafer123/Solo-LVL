@@ -14,6 +14,7 @@ import {
   CalendarRange,
   BarChart3,
   Flame,
+  LogOut,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { StatKind } from "@/lib/types";
@@ -50,7 +51,8 @@ function fmtMmSs(sec: number) {
 
 export function MobileApp({ snapshot }: { snapshot: TrackerSnapshot }) {
   const tracker = useTracker(snapshot);
-  const lbHref = useIsDemo() ? '/demo/leaderboard' : '/leaderboard';
+  const isDemo = useIsDemo();
+  const lbHref = isDemo ? '/demo/leaderboard' : '/leaderboard';
   const profile = tracker.snapshot.profile;
   const weekStart = tracker.snapshot.weekStart;
   const username = profile.username ?? profile.displayName;
@@ -95,6 +97,17 @@ export function MobileApp({ snapshot }: { snapshot: TrackerSnapshot }) {
             >
               Edit tasks
             </button>
+            {!isDemo && (
+              <form action="/auth/signout" method="post">
+                <button
+                  type="submit"
+                  aria-label="Sign out"
+                  className="grid h-10 w-10 place-items-center rounded-xl border border-white/10 bg-white/5 text-slate-400 transition-colors hover:bg-white/10 hover:text-slate-200"
+                >
+                  <LogOut className="h-5 w-5" strokeWidth={2.25} />
+                </button>
+              </form>
+            )}
           </div>
         </div>
 

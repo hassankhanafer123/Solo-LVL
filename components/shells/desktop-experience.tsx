@@ -15,6 +15,7 @@ import {
   AlertTriangle,
   Calendar,
   Trophy,
+  LogOut,
 } from "lucide-react";
 import { daysOfWeek } from "@/lib/time";
 import confetti from "canvas-confetti";
@@ -124,7 +125,8 @@ const STAT_HEX: Record<Stat, [string, string, string]> = {
 export function DesktopExperience({ snapshot }: { snapshot: TrackerSnapshot }) {
   const reduce = useReducedMotion();
   const tracker = useTracker(snapshot);
-  const lbHref = useIsDemo() ? '/demo/leaderboard' : '/leaderboard';
+  const isDemo = useIsDemo();
+  const lbHref = isDemo ? '/demo/leaderboard' : '/leaderboard';
 
   const quests = useMemo(
     () => [...tracker.snapshot.dailyQuests, ...tracker.snapshot.weeklyQuests].map(toViewQuest),
@@ -340,6 +342,18 @@ export function DesktopExperience({ snapshot }: { snapshot: TrackerSnapshot }) {
             <Calendar className="h-3 w-3" strokeWidth={2.5} />
             Plan Week
           </button>
+          {!isDemo && (
+            <form action="/auth/signout" method="post">
+              <button
+                type="submit"
+                data-cursor="hover"
+                aria-label="Sign out"
+                className="flex items-center rounded-full border border-white/10 bg-slate-950/60 px-3 py-1.5 font-mono text-[10px] tracking-[0.2em] uppercase text-slate-400 hover:bg-white/10 hover:text-slate-200 transition-colors backdrop-blur-xl"
+              >
+                <LogOut className="h-3 w-3" strokeWidth={2.5} />
+              </button>
+            </form>
+          )}
         </div>
       </header>
 
