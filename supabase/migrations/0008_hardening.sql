@@ -6,6 +6,12 @@
 -- so any user could forge total_xp/level (leaderboard) or point email_target
 -- at a stranger. Column-level grants fix this; the API writes locked columns
 -- via the service-role client (which bypasses grants + RLS) from 0008 on.
+--
+-- ⚠️ DEPLOY ORDER: apply this migration only alongside (or after) an API build
+-- that writes locked columns via the service-role client. Against an older
+-- API, Postgres's all-or-nothing column-privilege check makes the combined
+-- updates in set_quest_progress / set_weekly_progress fail with
+-- "permission denied" (statements mixing granted columns with xp_awarded).
 
 -- profile: clients may update only genuinely user-editable columns.
 revoke update on table public.profile from authenticated, anon;
@@ -58,3 +64,7 @@ alter type email_status add value if not exists 'pending';
 -- 2. select count(*) from information_schema.check_constraints
 --      where constraint_name = 'profile_username_format';  -- expect 1
 -- 3. set role anon; select public.get_leaderboard();  -- expect permission denied
+-- 4. ALLOW path (as an authenticated user via PostgREST, on your own row):
+--    PATCH /rest/v1/quest_instance?id=eq.<own-id> {"actual_value": 1} -> 204
+--    PATCH /rest/v1/profile?user_id=eq.<self> {"leaderboard_opt_in": true} -> 204
+--    (legit single-column writes must still succeed after the revokes)
