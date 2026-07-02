@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from typing import Literal, Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 StatKind = Literal["INT", "STR", "DIS"]
 CompletionType = Literal["checkbox", "count", "timer"]
@@ -84,25 +84,27 @@ class SetUsernameResult(BaseModel):
 
 # ---------- requests ----------
 class SetUsernameBody(BaseModel):
-    username: str
+    username: str = Field(max_length=64)  # real rule (3–20) enforced in service + DB
 
 
 class SetProgressBody(BaseModel):
-    actualValue: int
+    # Negative values are clamped to 0 by the service (existing behaviour);
+    # the cap guards the int4 column and absurd payloads.
+    actualValue: int = Field(ge=-1_000_000, le=10_000_000)
 
 
 class PlanRowInput(BaseModel):
     """Identical to PlanRowInput in lib/tracker/plan-reconcile.ts (snake_case)."""
 
     id: Optional[str]
-    name: str
+    name: str = Field(min_length=1, max_length=80)
     completion_type: CompletionType
-    target_value: Optional[int]
+    target_value: Optional[int] = Field(default=None, ge=0, le=10_000_000)
     primary_stat: StatKind
     is_required: bool
     cadence: Cadence
-    sort_order: int
+    sort_order: int = Field(ge=0, le=500)
 
 
 class PlanWeekBody(BaseModel):
-    rows: list[PlanRowInput]
+    rows: list[PlanRowInput] = Field(max_length=50)
