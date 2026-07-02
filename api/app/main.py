@@ -62,8 +62,12 @@ app.add_middleware(
 
 # --- Rate limiting -------------------------------------------------------
 def _client_key(request: Request) -> str:
-    # Behind Fly's proxy the socket peer is the proxy; trust the first hop of
-    # X-Forwarded-For for per-client limiting, else fall back to remote addr.
+    # On Fly, Fly-Client-IP is set by the edge proxy and can't be spoofed.
+    # X-Forwarded-For is appended-to (leftmost hop is client-controlled), so
+    # it is only a last resort for non-Fly deployments behind one proxy.
+    fly_ip = request.headers.get("fly-client-ip")
+    if fly_ip:
+        return fly_ip.strip()
     fwd = request.headers.get("x-forwarded-for")
     if fwd:
         return fwd.split(",")[0].strip()
