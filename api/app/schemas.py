@@ -53,6 +53,67 @@ class TrackerQuest(BaseModel):
     cadence: Cadence
 
 
+# ---------- social (party / duels / feed) ----------
+class PartyInfo(BaseModel):
+    id: str
+    name: str
+    code: str
+    combinedXp: int
+
+
+class PartyMemberEntry(BaseModel):
+    userId: str
+    username: Optional[str]
+    level: int
+    totalXp: int
+    weeklyXp: int
+    duelWins: int
+    isLeader: bool
+
+
+class FeedEventView(BaseModel):
+    id: str
+    kind: str
+    username: Optional[str]
+    payload: dict
+    createdAt: str
+
+
+class DuelEntry(BaseModel):
+    id: str
+    status: str
+    challengerId: str
+    opponentId: str
+    challengerUsername: Optional[str]
+    opponentUsername: Optional[str]
+    challengerScore: int
+    opponentScore: int
+    endsAt: Optional[str]
+    winnerId: Optional[str]
+
+
+class PartyView(BaseModel):
+    party: Optional[PartyInfo]
+    members: list[PartyMemberEntry]
+    feed: list[FeedEventView]
+    duels: list[DuelEntry]
+    myUserId: str
+
+
+class PartyActionResult(BaseModel):
+    ok: bool
+    error: Optional[str] = None
+    view: Optional[PartyView] = None
+
+
+class ActiveDuelSummary(BaseModel):
+    id: str
+    opponentUsername: Optional[str]
+    myScore: int
+    opponentScore: int
+    endsAt: Optional[str]
+
+
 class TrackerSnapshot(BaseModel):
     profile: TrackerProfile
     dailyQuests: list[TrackerQuest]
@@ -62,6 +123,7 @@ class TrackerSnapshot(BaseModel):
     weeklyCompletionPct: float
     weeklyCompleted: int
     weeklyTotal: int
+    activeDuel: Optional[ActiveDuelSummary] = None
 
 
 class LeaderboardEntry(BaseModel):
@@ -108,3 +170,15 @@ class PlanRowInput(BaseModel):
 
 class PlanWeekBody(BaseModel):
     rows: list[PlanRowInput] = Field(max_length=50)
+
+
+class CreatePartyBody(BaseModel):
+    name: str = Field(min_length=3, max_length=24)
+
+
+class JoinPartyBody(BaseModel):
+    code: str = Field(min_length=4, max_length=12)
+
+
+class ChallengeBody(BaseModel):
+    opponentId: str = Field(max_length=64)
