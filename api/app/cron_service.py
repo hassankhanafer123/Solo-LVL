@@ -104,6 +104,12 @@ def run_reminders(now: datetime | None = None, admin=None) -> dict:
             username = p.get("username") or "Hunter"
 
             for kind in (k for k in ("daily", "weekly") if getattr(due, k)):
+                # Emails intentionally off (no Resend key): count as skipped
+                # without claiming an email_log row or touching the network,
+                # so enabling the key later sends that day's email normally.
+                if not s.resend_api_key:
+                    skipped += 1
+                    continue
                 if not _claim(admin, p["user_id"], due.local_date, kind):
                     skipped += 1
                     continue

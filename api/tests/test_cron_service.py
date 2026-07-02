@@ -25,6 +25,14 @@ def _user(uid, email):
     return SimpleNamespace(id=uid, email=email)
 
 
+def _enable_email(monkeypatch, key="re_test"):
+    """Sends only happen when a Resend key is configured (emails-off launch)."""
+    monkeypatch.setattr(
+        cron, "get_settings",
+        lambda: SimpleNamespace(resend_api_key=key, app_url="http://localhost:3000"),
+    )
+
+
 def _admin(profiles, users, claim_wins=True):
     admin = MagicMock()
     admin.auth.admin.list_users.side_effect = [users, []]  # one page, then empty
@@ -53,6 +61,7 @@ def _admin(profiles, users, claim_wins=True):
 
 
 def test_bad_timezone_does_not_kill_other_users(monkeypatch):
+    _enable_email(monkeypatch)
     sent = []
     monkeypatch.setattr(cron, "send_email", lambda **kw: sent.append(kw["to"]))
     admin = _admin(
@@ -66,6 +75,7 @@ def test_bad_timezone_does_not_kill_other_users(monkeypatch):
 
 
 def test_lost_claim_skips_send(monkeypatch):
+    _enable_email(monkeypatch)
     sent = []
     monkeypatch.setattr(cron, "send_email", lambda **kw: sent.append(kw["to"]))
     admin = _admin(
@@ -96,6 +106,7 @@ def test_failed_send_updates_log_status(monkeypatch):
         raise RuntimeError("smtp down")
 
     monkeypatch.setattr(cron, "send_email", boom)
+    _enable_email(monkeypatch)
     admin = _admin(profiles=[_profile("u1")], users=[_user("u1", "a@x.com")])
     out = cron.run_reminders(now=NOW, admin=admin)
 
@@ -113,6 +124,7 @@ def test_failed_send_updates_log_status(monkeypatch):
 
 
 def test_email_target_is_ignored(monkeypatch):
+    _enable_email(monkeypatch)
     sent = []
     monkeypatch.setattr(cron, "send_email", lambda **kw: sent.append(kw["to"]))
     p = _profile("u1")
@@ -120,3 +132,19 @@ def test_email_target_is_ignored(monkeypatch):
     admin = _admin(profiles=[p], users=[_user("u1", "real@x.com")])
     cron.run_reminders(now=NOW, admin=admin)
     assert sent == ["real@x.com"]
+
+
+def test_no_resend_key_skips_without_claiming(monkeypatch):
+    # Launch is intentionally email-less: with no key, due users are counted
+    # as skipped — no network call, no email_log claim row — so enabling the
+    # key later delivers that day's email normally.
+    _enable_email(monkeypatch, key="")
+    sent = []
+    monkeypatch.setattr(cron, "send_email", lambda **kw: sent.append(kw["to"]))
+    admin = _admin(profiles=[_profile("u1")], users=[_user("u1", "a@x.com")])
+    out = cron.run_reminders(now=NOW, admin=admin)
+    assert sent == []
+    assert out["skipped"] >= 1
+    assert out["errors"] == []
+    admin.email_log.upsert.assert_not_called()
+    admin.email_log.update.assert_not_called()
