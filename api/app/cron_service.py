@@ -17,19 +17,36 @@ from .logic.email_due import reminder_due
 
 
 def _email_map(admin) -> dict[str, str | None]:
+    """All auth users' emails. Paginates — GoTrue defaults to 50/page."""
     out: dict[str, str | None] = {}
-    page = admin.auth.admin.list_users()
-    users = page if isinstance(page, list) else getattr(page, "users", page)
-    for u in users:
-        out[u.id] = getattr(u, "email", None)
+    page_num = 1
+    while True:
+        page = admin.auth.admin.list_users(page=page_num, per_page=1000)
+        users = page if isinstance(page, list) else getattr(page, "users", [])
+        if not users:
+            break
+        for u in users:
+            out[u.id] = getattr(u, "email", None)
+        if len(users) < 1000:
+            break
+        page_num += 1
     return out
 
 
-def _already_sent(admin, user_id: str, local_date: str, kind: str) -> bool:
+def _claim(admin, user_id: str, local_date: str, kind: str) -> bool:
+    """Insert the email_log row BEFORE sending (status='pending').
+
+    The (user_id, quest_date, kind) unique index makes this a race-safe
+    claim: if another run already inserted the row, ignore_duplicates makes
+    the upsert return no data and we skip. Requires the 'pending' enum value
+    from migration 0008.
+    """
     res = (
-        admin.table("email_log").select("id")
-        .eq("user_id", user_id).eq("quest_date", local_date).eq("kind", kind)
-        .maybe_single().execute()
+        admin.table("email_log").upsert(
+            {"user_id": user_id, "quest_date": local_date, "kind": kind,
+             "status": "pending", "error": None},
+            on_conflict="user_id,quest_date,kind", ignore_duplicates=True,
+        ).execute()
     )
     return bool(res and res.data)
 
@@ -49,9 +66,9 @@ def _daily_tasks(admin, user_id: str, week_start: str) -> list[dict]:
     return [{"name": r["name"], "stat": r["primary_stat"]} for r in rows]
 
 
-def run_reminders(now: datetime | None = None) -> dict:
+def run_reminders(now: datetime | None = None, admin=None) -> dict:
     s = get_settings()
-    admin = admin_client()
+    admin = admin or admin_client()
     now = now or datetime.now(timezone.utc)
     emails = _email_map(admin)
     profiles = (
@@ -65,53 +82,57 @@ def run_reminders(now: datetime | None = None) -> dict:
     errors: list[str] = []
 
     for p in profiles:
-        due = reminder_due(
-            now=now,
-            timezone=p["timezone"],
-            send_hour=p["email_send_hour_local"],
-            reset_hour=p["reset_hour_local"],
-            email_enabled=p["email_enabled"],
-        )
-        if not due.daily and not due.weekly:
-            skipped += 1
-            continue
-        recipient = p.get("email_target") or emails.get(p["user_id"])
-        if not recipient:
-            skipped += 1
-            continue
-        username = p.get("username") or "Hunter"
-
-        for kind in (k for k in ("daily", "weekly") if getattr(due, k)):
-            if _already_sent(admin, p["user_id"], due.local_date, kind):
+        # One user's bad data (e.g. a garbage timezone written directly to the
+        # DB) must never break the run for everyone else.
+        try:
+            due = reminder_due(
+                now=now,
+                timezone=p["timezone"],
+                send_hour=p["email_send_hour_local"],
+                reset_hour=p["reset_hour_local"],
+                email_enabled=p["email_enabled"],
+            )
+            if not due.daily and not due.weekly:
                 skipped += 1
                 continue
-            status, error = "sent", None
-            try:
-                if kind == "daily":
-                    html = morning_email_html(
-                        username=username,
-                        tasks=_daily_tasks(admin, p["user_id"], due.week_start),
-                        app_url=s.app_url,
-                    )
-                    subject = f"Good morning, {username} — today's run"
+            # email_target is client-writable history; only the auth email is
+            # verified. Never send anywhere else (abuse vector otherwise).
+            recipient = emails.get(p["user_id"])
+            if not recipient:
+                skipped += 1
+                continue
+            username = p.get("username") or "Hunter"
+
+            for kind in (k for k in ("daily", "weekly") if getattr(due, k)):
+                if not _claim(admin, p["user_id"], due.local_date, kind):
+                    skipped += 1
+                    continue
+                status, error = "sent", None
+                try:
+                    if kind == "daily":
+                        html = morning_email_html(
+                            username=username,
+                            tasks=_daily_tasks(admin, p["user_id"], due.week_start),
+                            app_url=s.app_url,
+                        )
+                        subject = f"Good morning, {username} — today's run"
+                    else:
+                        html = weekly_email_html(username=username, app_url=s.app_url)
+                        subject = "Plan your week on DayMaxing"
+                    send_email(to=recipient, subject=subject, html=html)
+                except Exception as exc:  # noqa: BLE001
+                    status, error = "failed", str(exc)
+                    errors.append(f"{kind}:{p['user_id']}:{error}")
                 else:
-                    html = weekly_email_html(username=username, app_url=s.app_url)
-                    subject = "Plan your week on DayMaxing"
-                send_email(to=recipient, subject=subject, html=html)
-            except Exception as exc:  # noqa: BLE001
-                status, error = "failed", str(exc)
-                errors.append(f"{kind}:{p['user_id']}:{error}")
-            else:
-                if kind == "daily":
-                    daily_sent += 1
-                else:
-                    weekly_sent += 1
-            admin.table("email_log").insert({
-                "user_id": p["user_id"],
-                "quest_date": due.local_date,
-                "kind": kind,
-                "status": status,
-                "error": error,
-            }).execute()
+                    if kind == "daily":
+                        daily_sent += 1
+                    else:
+                        weekly_sent += 1
+                admin.table("email_log").update(
+                    {"status": status, "error": error}
+                ).eq("user_id", p["user_id"]).eq("quest_date", due.local_date) \
+                 .eq("kind", kind).execute()
+        except Exception as exc:  # noqa: BLE001
+            errors.append(f"user:{p.get('user_id')}:{exc}")
 
     return {"dailySent": daily_sent, "weeklySent": weekly_sent, "skipped": skipped, "errors": errors}
