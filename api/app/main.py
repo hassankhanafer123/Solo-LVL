@@ -30,7 +30,12 @@ from .auth import AuthContext, require_user
 from .config import get_settings
 from .db import admin_client
 from .schemas import (
+    ChallengeBody,
+    CreatePartyBody,
+    JoinPartyBody,
     LeaderboardView,
+    PartyActionResult,
+    PartyView,
     PlanWeekBody,
     SetProgressBody,
     SetUsernameBody,
@@ -90,6 +95,11 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
 
 def _svc(ctx: AuthContext) -> TrackerService:
     return TrackerService(ctx.client, ctx.user_id, admin=admin_client())
+
+
+def _social(ctx: AuthContext) -> "SocialService":
+    from .social_service import SocialService
+    return SocialService(db=ctx.client, admin=admin_client(), uid=ctx.user_id)
 
 
 @app.get("/health")
@@ -158,6 +168,41 @@ def join_leaderboard(ctx: AuthContext = Depends(require_user)):
 @app.post("/api/leaderboard/leave", response_model=LeaderboardView)
 def leave_leaderboard(ctx: AuthContext = Depends(require_user)):
     return _svc(ctx).leave_leaderboard()
+
+
+@app.get("/api/party", response_model=PartyView)
+def get_party(ctx: AuthContext = Depends(require_user)):
+    return _social(ctx).get_party_view()
+
+
+@app.post("/api/party", response_model=PartyActionResult)
+def create_party(body: CreatePartyBody, ctx: AuthContext = Depends(require_user)):
+    return _social(ctx).create_party(body.name.strip())
+
+
+@app.post("/api/party/join", response_model=PartyActionResult)
+def join_party(body: JoinPartyBody, ctx: AuthContext = Depends(require_user)):
+    return _social(ctx).join_party(body.code)
+
+
+@app.post("/api/party/leave", response_model=PartyView)
+def leave_party(ctx: AuthContext = Depends(require_user)):
+    return _social(ctx).leave_party()
+
+
+@app.post("/api/duels", response_model=PartyActionResult)
+def challenge_duel(body: ChallengeBody, ctx: AuthContext = Depends(require_user)):
+    return _social(ctx).challenge(body.opponentId)
+
+
+@app.post("/api/duels/{duel_id}/accept", response_model=PartyView)
+def accept_duel(duel_id: str, ctx: AuthContext = Depends(require_user)):
+    return _social(ctx).accept(duel_id)
+
+
+@app.post("/api/duels/{duel_id}/decline", response_model=PartyView)
+def decline_duel(duel_id: str, ctx: AuthContext = Depends(require_user)):
+    return _social(ctx).decline(duel_id)
 
 
 @app.post("/api/plan", response_model=TrackerSnapshot)
