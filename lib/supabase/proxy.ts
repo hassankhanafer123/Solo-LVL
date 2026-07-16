@@ -46,7 +46,10 @@ export async function updateSession(request: NextRequest) {
 
   if (!user && !isPublic) {
     const url = request.nextUrl.clone();
-    url.pathname = "/login";
+    // NEXT_PUBLIC_DEMO_FALLBACK=1 (local only): land signed-out visitors in
+    // demo mode instead of /login while the Supabase project is unreachable.
+    url.pathname =
+      process.env.NEXT_PUBLIC_DEMO_FALLBACK === "1" ? "/demo" : "/login";
     return NextResponse.redirect(url);
   }
 
